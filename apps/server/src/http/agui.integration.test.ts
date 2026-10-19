@@ -1,13 +1,21 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
+import {
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxThinking,
+} from "@earendil-works/pi-ai";
 import { createRegistry } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { TravelService } from "../harness/service";
 import { buildServer } from "./app";
 
-async function openService() {
+async function openService(
+  thinkingLevel: "off" | "low" | "medium" = "off",
+) {
   const dir = await mkdtemp(join(tmpdir(), "pi-demo-agui-"));
   const faux = fauxProvider();
   const models = createModels();
@@ -18,6 +26,7 @@ async function openService() {
     models,
     registry: createRegistry(),
     defaultModel: model,
+    thinkingLevel,
   });
   return { service, faux };
 }
@@ -61,6 +70,48 @@ describe("AG-UI route with the real durable service", () => {
       expect(response.body).not.toContain("RUN_ERROR");
       expect(response.body).toContain("TEXT_MESSAGE_START");
       expect(response.body).toContain("TEXT_MESSAGE_END");
+    } finally {
+      await app.close();
+      await service.close();
+    }
+  }, 30_000);
+
+  it("streams reasoning events when the model returns thinking", async () => {
+    const { service, faux } = await openService("low");
+    faux.setResponses([
+      fauxAssistantMessage([fauxThinking("先想一下"), fauxText("你好")]),
+    ]);
+    const app = buildServer({ service });
+    const trip = await service.createTrip({
+      title: "泰山",
+      destination: "泰山",
+      startDate: "2026-10-26",
+      days: 3,
+    });
+
+    try {
+      const response = await Promise.race([
+        app.inject({
+          method: "POST",
+          url: `/agui?tripId=${trip.tripId}`,
+          payload: {
+            runId: "r-thinking",
+            messages: [{ id: "m1", role: "user", content: "泰山三天" }],
+          },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("AG-UI stream did not end")), 20_000),
+        ),
+      ]);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain("REASONING_START");
+      expect(response.body).toContain("REASONING_MESSAGE_START");
+      expect(response.body).toContain("REASONING_MESSAGE_CONTENT");
+      expect(response.body).toContain("REASONING_MESSAGE_END");
+      expect(response.body).toContain("REASONING_END");
+      expect(response.body).not.toContain("THINKING_");
+      expect(response.body).toContain("RUN_FINISHED");
     } finally {
       await app.close();
       await service.close();

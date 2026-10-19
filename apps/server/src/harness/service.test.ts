@@ -63,6 +63,46 @@ it("reopens the same SQLite and keeps the trip", async () => {
   await reopened.close();
 });
 
+it("upgrades a legacy trip to the configured thinking level on its next message", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
+  const env = testEnv();
+  const off = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+    thinkingLevel: "off",
+  } as never);
+  const trip = await off.createTrip({
+    title: "泰山",
+    destination: "泰山",
+    startDate: "2026-10-26",
+    days: 3,
+  });
+  await off.close();
+
+  const seen: Array<string | undefined> = [];
+  env.faux.setResponses([
+    (_context, options) => {
+      seen.push(options?.reasoning);
+      return fauxAssistantMessage([fauxText("ok")]);
+    },
+  ]);
+  const low = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+    thinkingLevel: "low",
+  } as never);
+  await low.submitMessage(trip.tripId, "你好", "r-low");
+  for (let i = 0; i < 100 && seen.length === 0; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  expect(seen[0]).toBe("low");
+  await low.close();
+});
+
 it("returns the existing submission for a duplicate request id", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
   const env = testEnv();

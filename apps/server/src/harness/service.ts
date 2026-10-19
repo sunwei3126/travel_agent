@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
-import type { Model, Models } from "@earendil-works/pi-ai";
+import type { Model, Models, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
   defineExtension,
   Harness,
@@ -43,6 +43,7 @@ export type TravelServiceOptions = {
   models: Models;
   registry: Registry;
   defaultModel: Model<string>;
+  thinkingLevel?: ModelThinkingLevel;
   now?: () => Date;
 };
 
@@ -66,10 +67,13 @@ const EMPTY_RESEARCH: TripResearch = { searchCount: 0, fetchCount: 0 };
 export class TravelService {
   private readonly context: Context = BACKGROUND_CONTEXT;
 
+  private readonly upgradedThinkingTrips = new Set<string>();
+
   private constructor(
     private readonly harness: Harness,
     private readonly index: TripIndexStore,
     private readonly defaultModel: Model<string>,
+    private readonly thinkingLevel: ModelThinkingLevel,
     private readonly now: () => Date,
   ) {}
 
@@ -94,6 +98,7 @@ export class TravelService {
       harness,
       new TripIndexStore(join(options.dataDir, "trips.json")),
       options.defaultModel,
+      options.thinkingLevel ?? "off",
       now,
     );
   }
@@ -117,6 +122,7 @@ export class TravelService {
         agent: {
           model: { provider: this.defaultModel.provider, modelId: this.defaultModel.id },
           instructions: PLANNER_INSTRUCTIONS,
+          thinkingLevel: this.thinkingLevel,
         },
         init: async (tx, conversationId) => {
           const brief = await tx.doc(TripBriefDoc, conversationId);
@@ -203,8 +209,23 @@ export class TravelService {
     requestId: string,
   ): Promise<{ submissionId: string }> {
     const conversation = await this.requireConversationById(tripId);
+    await this.ensureThinkingLevel(tripId, conversation);
     const submission = await conversation.submit({ type: "input", content, requestId }, this.context);
     return { submissionId: String(submission.id) };
+  }
+
+  private async ensureThinkingLevel(
+    tripId: string,
+    conversation: Conversation,
+  ): Promise<void> {
+    if (this.thinkingLevel === "off" || this.upgradedThinkingTrips.has(tripId)) {
+      return;
+    }
+    const agent = await conversation.agent(this.context);
+    if (agent.thinkingLevel !== this.thinkingLevel) {
+      await conversation.configure({ thinkingLevel: this.thinkingLevel }, this.context);
+    }
+    this.upgradedThinkingTrips.add(tripId);
   }
 
   async getTranscript(tripId: string): Promise<TranscriptEntry[]> {

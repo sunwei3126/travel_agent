@@ -39,7 +39,8 @@ npm run dev --workspace @pi-demo/web
 ```
 
 Open `http://localhost:3000`, choose a trip, and chat with the assistant while
-the plan fills in.
+the plan fills in. Chat messages include collapsed "思考过程" and "工具调用"
+blocks; click to expand them.
 
 The server reads these optional environment variables:
 
@@ -47,13 +48,22 @@ The server reads these optional environment variables:
 - `DATA_DIR` – durable SQLite/doc directory (default `./data`)
 - `MAGPIE_BASE_URL` – magpie gateway (default `http://127.0.0.1:3425`)
 - `MAGPIE_MODEL` – model id (default `deepseek/deepseek-flash`)
+- `PI_THINKING_LEVEL` – thinking level for the model (default `low`; use `off`
+  to disable). Thinking appears in the chat when magpie returns thinking blocks.
 - `DEEPSEEK_BASE_URL` – DeepSeek research API base URL
 - `API_URL` – acceptance scripts' API URL (default `http://127.0.0.1:4000`)
 
 ## Acceptance checks
 
-With magpie running and `DEEPSEEK_API_KEY` exported, start the app and run the
-live Tai Shan scenario:
+With magpie running and `DEEPSEEK_API_KEY` exported, first check whether the
+gateway returns thinking blocks (exit `0` = yes, `2` = no thinking; the app
+still works, only the 思考过程 blocks are empty):
+
+```bash
+npm run probe:thinking
+```
+
+Then start the app and run the live Tai Shan scenario:
 
 ```bash
 npm run acceptance:live

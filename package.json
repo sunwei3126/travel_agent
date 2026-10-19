@@ -10,7 +10,8 @@
     "test": "npm run test --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
     "acceptance:live": "tsx scripts/acceptance-live.ts",
-    "acceptance:crash": "bash scripts/crash-resume.sh"
+    "acceptance:crash": "bash scripts/crash-resume.sh",
+    "probe:thinking": "tsx scripts/probe-thinking.ts"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

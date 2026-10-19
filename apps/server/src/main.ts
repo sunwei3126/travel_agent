@@ -1,5 +1,6 @@
 import type { DayCard } from "@pi-demo/shared";
-import { contentText } from "@earendil-works/pi-ai";
+import { contentText, type ModelThinkingLevel } from "@earendil-works/pi-ai";
+import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
 import { createRegistry } from "@earendil-works/pi-durable";
 import { createTravelExtension } from "./agent/extension";
 import { DeepSeekClient } from "./deepseek/client";
@@ -39,11 +40,16 @@ registry.install(
   }),
 );
 
+const requestedThinkingLevel =
+  (process.env.PI_THINKING_LEVEL ?? "low") as ModelThinkingLevel;
+const thinkingLevel = clampThinkingLevel(model, requestedThinkingLevel);
+
 const service = await TravelService.open({
   dataDir: process.env.DATA_DIR ?? "./data",
   models,
   registry,
   defaultModel: model,
+  thinkingLevel,
 });
 
 const app = buildServer({ service });
