@@ -49,9 +49,18 @@ These are the five inputs most likely to break a real user, and each has a test 
 **Interfaces:**
 - Produces: `TripBrief`, `DayCard`, `DayBlock`, `Claim`, `TripPlan`, `TripSource`, `TripSources`, `BudgetSummary`, `TripSnapshot`, `TripIndexEntry`, `TripResearch`
 - Shapes:
+  - `TripBrief = { destination?: string; origin?: string; startDate?: string; days?: number; budgetCny?: number; companions?: string; fitness?: "low" | "average" | "high"; interests?: string[]; constraints?: string[]; assumptions?: string[] }`
+  - `Claim = { text: string; kind: "fact" | "opinion"; sourceIds: string[]; unverified?: boolean }`
+  - `DayBlock = { time: string; title: string; detail: string; claims: Claim[]; costCny?: [number, number] }`
+  - `DayCard = { dayIndex: number; date: string; title: string; blocks: DayBlock[]; scenery: Claim[]; food: Claim[]; transport: Claim[]; estimatedCostCny: [number, number]; sources: string[]; svg?: string; svgStatus: "ok" | "failed" | "pending"; updatedAt: string }`
+  - `TripPlan = { days: DayCard[]; summary?: string; budget?: BudgetSummary }`
+  - `TripSource = { id: string; query: string; title: string; url: string; snippet: string; summary?: string; content?: string; date?: string; authority?: number; rerankScore?: number; fetchedAt?: string; kind: "search" | "fetch" }`
+  - `TripSources = Record<string, TripSource>`
+  - `TranscriptEntry = { id: string; role: "user" | "assistant" | "tool"; content: string; name?: string }`
   - `TripIndexEntry = { tripId: string; conversationId: string; title: string; destination: string; startDate: string; days: number; updatedAt: string; status: "active" | "completed" }`
   - `TripResearch = { searchCount: number; fetchCount: number }`
   - `BudgetSummary = { low: number; high: number; cap: number; withinBudget: boolean }`
+  - `TripState = { brief: TripBrief; plan: TripPlan; sources: TripSources; research: TripResearch & { running: boolean } }`
   - `TripSnapshot = { trip: TripIndexEntry; brief: TripBrief; plan: TripPlan; sources: TripSources; research: TripResearch; running: boolean }`
 - Produces: `isBriefComplete(brief: TripBrief): boolean`, `missingBriefFields(brief: TripBrief): string[]`
 - Produces TypeBox schemas: `TripBriefSchema`, `DayCardSchema`, `TripPlanSchema`
@@ -705,6 +714,8 @@ git commit -m "feat: add search, fetch, and sketch tools"
 - `TravelService.createTrip(input: { title: string; destination: string; startDate: string; days: number }): Promise<TripIndexEntry>`
 - `TravelService.getSnapshot(tripId: string): Promise<TripSnapshot>`
 - `TravelService.submitMessage(tripId: string, content: string, requestId: string): Promise<{ submissionId: string }>`
+- `TravelService.getTranscript(tripId: string): Promise<TranscriptEntry[]>`
+- `TravelService.watchEvents(tripId: string): AsyncIterable<PiEvent>` (wraps `watchEvents(harness, conversationId, context)`)
 - `TravelService.close(): Promise<void>`
 
 - [ ] **Step 1: Write the failing durability test**
@@ -775,7 +786,7 @@ git commit -m "feat: add travel service with durable trips"
 
 **Interfaces:**
 - Consumes: `@ag-ui/core` event types.
-- Produces: `buildSnapshot(snapshot: { entries; brief; plan; sources; running }): AguiEvent[]` (emits `MESSAGES_SNAPSHOT` then `STATE_SNAPSHOT`).
+- Produces: `buildSnapshot(snapshot: { threadId: string; runId: string; entries: TranscriptEntry[]; brief: TripBrief; plan: TripPlan; sources: TripSources; research: TripResearch; running: boolean }): AguiEvent[]` (emits `MESSAGES_SNAPSHOT` then `STATE_SNAPSHOT`).
 - Produces: `mapPiEvents(batch: PiEvent[]): AguiEvent[]`:
   - assistant text start/delta/end → `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END`
   - tool start/end → `TOOL_CALL_START` / `TOOL_CALL_RESULT`
@@ -878,6 +889,8 @@ Expected: FAIL.
 Use Fastify's `reply.raw` for SSE, with `Content-Type: text/event-stream`, `Cache-Control: no-cache`, and `Connection: keep-alive`. Write each event as `data: ${JSON.stringify(event)}\n\n`. End the stream when the service's event iterator finishes or the client disconnects.
 
 `main.ts` wires env → `createMagpieModels`/`resolveMagpieModel` → `DeepSeekClient` → a `generate` closure using `models.completeSimple` → `generateDaySketch` → `createTravelExtension` → `createRegistry` → `TravelService.open` → `buildServer`.
+
+The `/agui` route submits the last user message with `runId` as the request id, emits `buildSnapshot({ entries: await service.getTranscript(tripId), ...snapshot })`, then iterates `service.watchEvents(tripId)`, maps each batch with `mapPiEvents`, and ends after the mapped `RUN_FINISHED` or `RUN_ERROR`.
 
 - [ ] **Step 4: Run the test and verify it passes**
 
