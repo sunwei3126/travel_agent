@@ -490,7 +490,7 @@ Expected: FAIL with "Cannot find module".
 
 - [ ] **Step 3: Implement**
 
-Create a provider with `id: "magpie"`, an auth resolver that returns `{ auth: {} }`, one model entry, and `api: anthropicMessagesApi()` imported from `@earendil-works/pi-ai/api/anthropic-messages.lazy`. Read `MAGPIE_BASE_URL` and `MAGPIE_MODEL` overrides. Add a skipped live test gated by `MAGPIE_LIVE=1` that calls `completeSimple` with "回复 OK".
+Create a provider with `id: "magpie"`, an auth resolver that returns `{ auth: {} }`, one model entry carrying `headers: { "x-api-key": "magpie" }` (pi-ai 1.3.0 needs a non-empty request credential), and `api: anthropicMessagesApi()` imported from `@earendil-works/pi-ai/api/anthropic-messages.lazy`. Read `MAGPIE_BASE_URL` and `MAGPIE_MODEL` overrides. Add a skipped live test gated by `MAGPIE_LIVE=1` that calls `completeSimple` with "回复 OK".
 
 - [ ] **Step 4: Run the test and verify it passes**
 
