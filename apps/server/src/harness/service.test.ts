@@ -111,6 +111,25 @@ it("snapshots a new trip with its brief, empty plan, zero counts, and idle state
   await service.close();
 });
 
+it("lists trips from the index", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
+  const env = testEnv();
+  const service = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+  });
+  const trip = await service.createTrip({
+    title: "泰山",
+    destination: "泰山",
+    startDate: "2026-10-26",
+    days: 3,
+  });
+  await expect(service.listTrips()).resolves.toEqual([trip]);
+  await service.close();
+});
+
 it("returns the transcript as an array", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
   const env = testEnv();

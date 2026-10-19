@@ -130,6 +130,10 @@ export class TravelService {
     return entry;
   }
 
+  async listTrips(): Promise<TripIndexEntry[]> {
+    return this.index.list();
+  }
+
   async getSnapshot(tripId: string): Promise<TripSnapshot> {
     const trip = await this.requireTrip(tripId);
     const conversationId = toConversationId(trip.conversationId);
