@@ -16,6 +16,7 @@ export function TravelChat({
     <CopilotKit
       runtimeUrl={`/api/copilotkit/${encodeURIComponent(tripId)}`}
       agent="travel"
+      enableInspector={false}
     >
       <ChatPanel tripId={tripId} />
       {children}

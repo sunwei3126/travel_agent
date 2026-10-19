@@ -1,6 +1,7 @@
 "use client";
 
 import { useCopilotChatInternal } from "@copilotkit/react-core";
+import { useDefaultRenderTool } from "@copilotkit/react-core/v2";
 import {
   useEffect,
   useMemo,
@@ -16,6 +17,10 @@ import {
 import { ChatMessages } from "./ChatMessages";
 
 export function ChatPanel({ tripId }: { tripId: string }) {
+  // CopilotKit's own message views render tool calls too; give them a
+  // renderer so dev builds do not warn about our custom panel.
+  useDefaultRenderTool({});
+
   const {
     messages,
     sendMessage,

@@ -6,6 +6,9 @@ const chat = vi.hoisted(() => ({ hook: vi.fn() }));
 vi.mock("@copilotkit/react-core", () => ({
   useCopilotChatInternal: chat.hook,
 }));
+vi.mock("@copilotkit/react-core/v2", () => ({
+  useDefaultRenderTool: vi.fn(),
+}));
 vi.mock("../../lib/api", () => ({
   getTranscript: vi.fn(async () => []),
 }));
@@ -139,6 +142,18 @@ describe("ChatPanel", () => {
         expect.objectContaining({ content: "去泰山" }),
       );
     });
+  });
+
+  it("labels an empty reasoning block as still thinking", () => {
+    setup({
+      messages: [{ id: "r2", role: "reasoning", content: "" }],
+    });
+    render(<ChatPanel tripId="t1" />);
+
+    const reasoning = screen.getByTestId("reasoning-block");
+    expect(
+      within(reasoning).getByText("思考中…", { selector: "summary" }),
+    ).toBeInTheDocument();
   });
 
   it("shows a failed tool call with its error", () => {
