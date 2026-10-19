@@ -4,6 +4,7 @@ import { freshnessOf, isVerifiedFact, rankSources } from "./freshness";
 /** Bounds for the model-visible research channel. Full data stays in `trip.sources`. */
 export const MAX_SNIPPET_CHARS = 300;
 export const MAX_CONTENT_CHARS = 4000;
+export const MAX_VERIFIED_EXCERPT_CHARS = 1000;
 
 function truncate(value: string, max: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -13,13 +14,21 @@ function truncate(value: string, max: number): string {
 
 function sourceLines(source: TripSource, now: Date): string[] {
   const freshness = freshnessOf(source, now);
+  const verified = isVerifiedFact(source);
   return [
     `[${source.id}] ${source.title || "(untitled)"}`,
     `  url: ${source.url}`,
     `  date: ${source.date ?? "unknown"} (${freshness}); authority: ${
       source.authority ?? "unknown"
-    }; fetched: ${isVerifiedFact(source) ? "yes" : "no"}`,
+    }; fetched: ${verified ? "yes" : "no"}`,
     `  snippet: ${truncate(source.snippet, MAX_SNIPPET_CHARS) || "(none)"}`,
+    ...(verified && source.content !== undefined
+      ? [
+          `  fetchedContent: ${
+            truncate(source.content, MAX_VERIFIED_EXCERPT_CHARS) || "(empty page)"
+          }`,
+        ]
+      : []),
   ];
 }
 

@@ -1,9 +1,17 @@
-import { defineTool } from "@earendil-works/pi-durable";
+import {
+  defineTool,
+  type ToolExecutionApi,
+} from "@earendil-works/pi-durable";
 import { Type } from "@earendil-works/pi-ai";
-import type { TripSources } from "@pi-demo/shared";
+import type { Context } from "@earendil-works/chord/context";
+import type { TripSource, TripSources } from "@pi-demo/shared";
 import type { SearchOptions } from "../../deepseek/client";
 import { formatSearchResults } from "../../research/format";
-import { addSearchToSources } from "../../research/sources";
+import {
+  addFetchToSource,
+  addSearchToSources,
+  normalizeUrl,
+} from "../../research/sources";
 import {
   TripResearchDoc,
   TripSearchCacheDoc,
@@ -20,6 +28,8 @@ const parameters = Type.Object({
   needContent: Type.Optional(Type.Boolean({ description: "Ask for page content in the results" })),
 });
 
+const AUTO_FETCH_LIMIT = 2;
+
 /**
  * Stable cache key for a search: normalized query text plus every option that
  * changes the upstream request (undefined options are omitted).
@@ -34,10 +44,97 @@ export function searchCacheKey(query: string, options: SearchOptions): string {
   });
 }
 
+/**
+ * Picks the pages the search tool verifies itself: up to `limit` unique URLs,
+ * preferring `authority >= 3`, then filling from the remaining results in
+ * search order.
+ */
+export function selectFetchTargets<T extends { url: string; authority?: number }>(
+  items: T[],
+  limit: number = AUTO_FETCH_LIMIT,
+): T[] {
+  if (limit <= 0) return [];
+  const seen = new Set<string>();
+  const unique = items.filter((item) => {
+    const key = normalizeUrl(item.url);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const preferred = unique.filter((item) => (item.authority ?? 0) >= 3);
+  const selected = preferred.slice(0, limit);
+  for (const item of unique) {
+    if (selected.length >= limit) break;
+    if (!selected.includes(item)) selected.push(item);
+  }
+  return selected;
+}
+
+function mergeSources(
+  sources: TripSources,
+  fetched: TripSource[],
+): TripSources {
+  if (fetched.length === 0) return sources;
+  const merged: TripSources = { ...sources };
+  for (const source of fetched) merged[source.id] = source;
+  return merged;
+}
+
+function withFetchedIds(sourceIds: string[], fetched: TripSource[]): string[] {
+  return [...new Set([...sourceIds, ...fetched.map((source) => source.id)])];
+}
+
+/**
+ * Verifies up to `remaining` pages (at most two) from a search's own results.
+ * Each URL is fetched independently: one failure is recorded as an unfetched
+ * lead and never fails the search.
+ */
+async function autoFetch(
+  api: ToolExecutionApi,
+  context: Context,
+  deps: TravelDeps,
+  now: Date,
+  candidates: TripSource[],
+  remaining: number,
+): Promise<TripSource[]> {
+  const targets = selectFetchTargets(
+    candidates.filter((source) => source.fetchedAt === undefined),
+    Math.min(AUTO_FETCH_LIMIT, Math.max(0, remaining)),
+  );
+  const fetched: TripSource[] = [];
+
+  for (const target of targets) {
+    try {
+      const result = await deps.deepseek.fetch(target.url);
+      const source = await api.commit(async (tx) => {
+        const research = await tx.doc(TripResearchDoc, api.conversationId);
+        // A concurrent call may have reached the cap while this request ran.
+        if (research.fetchCount >= deps.caps.fetch) return undefined;
+        const stored = await tx.doc(TripSourcesDoc, api.conversationId);
+        const id = addFetchToSource(stored, result, now);
+        research.fetchCount += 1;
+        const attemptKey = normalizeUrl(target.url);
+        research.fetchAttempts = {
+          ...(research.fetchAttempts ?? {}),
+          [attemptKey]: (research.fetchAttempts?.[attemptKey] ?? 0) + 1,
+        };
+        return { ...stored[id] };
+      }, context);
+      if (source !== undefined) fetched.push(source);
+    } catch {
+      // The snippet remains a lead; the search itself still succeeds.
+    }
+  }
+
+  return fetched;
+}
+
 export function createSearchTool(deps: TravelDeps) {
   return defineTool({
     name: "deepseek_search",
-    description: "Search the web with DeepSeek and store the results as trip sources.",
+    description:
+      "Search the web with DeepSeek, store the results as trip sources, and fetch the top two pages for verified content.",
     parameters,
     structuredOutputSchema: Type.Object({ sourceIds: Type.Array(Type.String()) }),
     replay: "safe",
@@ -59,27 +156,44 @@ export function createSearchTool(deps: TravelDeps) {
       const currentSources =
         (await api.snapshot(TripSourcesDoc, api.conversationId, context)) ??
         ({} as TripSources);
+      const current = await api.snapshot(
+        TripResearchDoc,
+        api.conversationId,
+        context,
+      );
+      const fetchRemaining = deps.caps.fetch - (current?.fetchCount ?? 0);
+
       const cachedIds = cached?.[cacheKey]?.sourceIds ?? [];
       if (
         cachedIds.length > 0 &&
         cachedIds.every((id) => currentSources[id] !== undefined)
       ) {
+        // A cache hit is free for search, but may still verify top results the
+        // previous attempt could not fetch, subject to the fetch cap.
+        const candidates = cachedIds
+          .map((id) => currentSources[id])
+          .filter((source): source is TripSource => source !== undefined);
+        const fetched = await autoFetch(
+          api,
+          context,
+          deps,
+          now,
+          candidates,
+          fetchRemaining,
+        );
+        const outputSources = mergeSources(currentSources, fetched);
+        const outputIds = withFetchedIds(cachedIds, fetched);
         return {
           output: [
             {
               type: "text" as const,
-              text: formatSearchResults(args.query, cachedIds, currentSources, now),
+              text: formatSearchResults(args.query, outputIds, outputSources, now),
             },
           ],
           structuredOutput: { sourceIds: cachedIds },
         };
       }
 
-      const current = await api.snapshot(
-        TripResearchDoc,
-        api.conversationId,
-        context,
-      );
       enforceCap(current?.searchCount ?? 0, deps.caps.search, "search");
 
       const hits = await deps.deepseek.search(args.query, options);
@@ -99,11 +213,25 @@ export function createSearchTool(deps: TravelDeps) {
         return { sourceIds: ids, sources: stored };
       }, context);
 
+      const candidates = sourceIds
+        .map((id) => sources[id])
+        .filter((source): source is TripSource => source !== undefined);
+      const fetched = await autoFetch(
+        api,
+        context,
+        deps,
+        now,
+        candidates,
+        fetchRemaining,
+      );
+      const outputSources = mergeSources(sources, fetched);
+      const outputIds = withFetchedIds(sourceIds, fetched);
+
       return {
         output: [
           {
             type: "text" as const,
-            text: formatSearchResults(args.query, sourceIds, sources, now),
+            text: formatSearchResults(args.query, outputIds, outputSources, now),
           },
         ],
         structuredOutput: { sourceIds },
