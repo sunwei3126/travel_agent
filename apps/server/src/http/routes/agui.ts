@@ -11,6 +11,24 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
 };
 
+export type NextEvent<T> =
+  | { kind: "event"; result: IteratorResult<T> }
+  | { kind: "disconnected" };
+
+/**
+ * Races the next streamed event against the client closing the connection, so
+ * a handler parked on a quiet stream still returns when the client leaves.
+ */
+export function nextUnlessDisconnected<T>(
+  events: AsyncIterator<T>,
+  disconnected: Promise<void>,
+): Promise<NextEvent<T>> {
+  return Promise.race([
+    events.next().then((result) => ({ kind: "event" as const, result })),
+    disconnected.then(() => ({ kind: "disconnected" as const })),
+  ]);
+}
+
 function lastUserText(input: Partial<RunAgentInput>): string {
   const messages = Array.isArray(input.messages) ? input.messages : [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -61,9 +79,13 @@ export function registerAguiRoute(app: FastifyInstance, service: TravelServiceAp
       const mapper = createPiEventMapper();
       let disconnected = false;
       let terminal = false;
+      let notifyDisconnect!: () => void;
+      const disconnectPromise = new Promise<void>((resolve) => {
+        notifyDisconnect = resolve;
+      });
       const onClose = (): void => {
         disconnected = true;
-        void events.return?.();
+        notifyDisconnect();
       };
       reply.raw.on("close", onClose);
 
@@ -73,10 +95,11 @@ export function registerAguiRoute(app: FastifyInstance, service: TravelServiceAp
           write(event);
         }
 
-        while (!disconnected && !terminal) {
-          const next = await events.next();
-          if (next.done === true) break;
-          for (const event of mapper.map(next.value)) {
+        while (!terminal) {
+          const next = await nextUnlessDisconnected(events, disconnectPromise);
+          if (disconnected || next.kind === "disconnected") break;
+          if (next.result.done === true) break;
+          for (const event of mapper.map(next.result.value)) {
             write(event);
             if (event.type === EventType.RUN_ERROR) {
               terminal = true;
@@ -97,11 +120,9 @@ export function registerAguiRoute(app: FastifyInstance, service: TravelServiceAp
         }
       } finally {
         reply.raw.off("close", onClose);
-        try {
-          await events.return?.();
-        } catch {
-          // The stream is already ending.
-        }
+        // Immediate cancellation needs abort support in watchEvents; the
+        // returned promise is not awaited so the handler can finish now.
+        void events.return?.()?.catch(() => {});
         reply.raw.end();
       }
     },

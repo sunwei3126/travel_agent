@@ -1,6 +1,7 @@
 import type { TripIndexEntry, TripSnapshot } from "@pi-demo/shared";
 import { describe, expect, it } from "vitest";
 import { buildServer, type TravelServiceApi } from "./app";
+import { nextUnlessDisconnected } from "./routes/agui";
 
 function makeFakeService(): TravelServiceApi {
   const trips = new Map<string, TripIndexEntry>();
@@ -183,5 +184,31 @@ describe("AG-UI route", () => {
       payload: { runId: "r1", messages: [{ id: "m1", role: "user", content: "泰山" }] },
     });
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe("nextUnlessDisconnected", () => {
+  it("returns the next event when it arrives before the disconnect", async () => {
+    const events: AsyncIterator<number> = {
+      next: async () => ({ done: false, value: 7 }),
+    };
+
+    await expect(
+      nextUnlessDisconnected(events, new Promise<void>(() => {})),
+    ).resolves.toEqual({ kind: "event", result: { done: false, value: 7 } });
+  });
+
+  it("stops waiting when the client disconnects before the next event", async () => {
+    let disconnect!: () => void;
+    const signal = new Promise<void>((resolve) => {
+      disconnect = resolve;
+    });
+    const events: AsyncIterator<number> = {
+      next: () => new Promise<IteratorResult<number>>(() => {}),
+    };
+
+    const pending = nextUnlessDisconnected(events, signal);
+    disconnect();
+    await expect(pending).resolves.toEqual({ kind: "disconnected" });
   });
 });
