@@ -439,7 +439,7 @@ Expected: FAIL with "Cannot find module".
 
 - [ ] **Step 3: Implement**
 
-Build the prompt with `day.title` and `day.blocks.map(b => b.title)`. Call `generate`; run `validateAndSanitizeSvg`; on failure call `generate` again with the prompt plus the validation reason; on the second failure return `placeholderSvg(day.title)` with `status: "failed"`.
+Build the prompt with `day.title` and `day.blocks.map(b => b.title)`. Call `generate`; run `validateAndSanitizeSvg`; on failure call `generate` again with the prompt plus the validation reason; on the second failure return `placeholderSvg(`Day ${day.dayIndex} · ${day.title}`)` with `status: "failed"`.
 
 - [ ] **Step 4: Run the test and verify it passes**
 
