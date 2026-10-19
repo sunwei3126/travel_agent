@@ -58,4 +58,75 @@ describe("AG-UI protocol conformance", () => {
       lastValueFrom(of(...events).pipe(verifyEvents())),
     ).resolves.toMatchObject({ type: EventType.RUN_FINISHED });
   });
+
+  it("accepts a reasoning lifecycle and RUN_FINISHED", async () => {
+    const mapper = createPiEventMapper();
+    const snapshot = buildSnapshot({
+      threadId: "t1",
+      runId: "r1",
+      entries: [],
+      brief: {},
+      plan: { days: [] },
+      sources: {},
+      research: { searchCount: 0, fetchCount: 0 },
+      running: true,
+    });
+    const start = mapper.map({
+      type: "message_start",
+      message: {
+        role: "assistant",
+        content: [{ type: "thinking", thinking: "先想" }],
+      },
+    } as never);
+    const delta = mapper.map({
+      type: "message_update",
+      changes: [{ type: "thinking_delta", contentIndex: 0, delta: "一下" }],
+    } as never);
+    const end = mapper.map({
+      type: "message_end",
+      entry: {
+        id: 7,
+        model: [
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "先想一下" },
+              { type: "text", text: "你好" },
+            ],
+          },
+        ],
+      },
+    } as never);
+    const runEnd = mapper.map({ type: "run_end", inputs: [] } as never);
+
+    const events = [
+      { type: EventType.RUN_STARTED, threadId: "t1", runId: "r1" },
+      ...snapshot,
+      ...start,
+      ...delta,
+      ...end,
+      ...runEnd,
+      { type: EventType.RUN_FINISHED, threadId: "t1", runId: "r1" },
+    ] as BaseEvent[];
+
+    await expect(
+      lastValueFrom(of(...events).pipe(verifyEvents())),
+    ).resolves.toMatchObject({ type: EventType.RUN_FINISHED });
+  });
+
+  it("rejects RUN_FINISHED while a reasoning message is still open", async () => {
+    const events = [
+      { type: EventType.RUN_STARTED, threadId: "t1", runId: "r1" },
+      {
+        type: EventType.REASONING_MESSAGE_START,
+        messageId: "r-open",
+        role: "reasoning",
+      },
+      { type: EventType.RUN_FINISHED, threadId: "t1", runId: "r1" },
+    ] as BaseEvent[];
+
+    await expect(
+      lastValueFrom(of(...events).pipe(verifyEvents())),
+    ).rejects.toThrow();
+  });
 });
