@@ -64,7 +64,7 @@ export function buildSnapshot(input: SnapshotInput): AGUIEvent[] {
   return [
     {
       type: EventType.MESSAGES_SNAPSHOT,
-      messages: input.entries.map(toAguiMessage),
+      messages: toAguiMessages(input.entries),
     },
     {
       type: EventType.STATE_SNAPSHOT,
@@ -96,14 +96,59 @@ function mapBatch(state: MapperState, batch: PiEvent | PiEvent[]): AGUIEvent[] {
   return mapped;
 }
 
-function toAguiMessage(entry: TranscriptEntry): AguiMessage {
-  if (entry.role === "tool") {
-    return { id: entry.id, role: "tool", content: entry.content, toolCallId: entry.id };
-  }
-  if (entry.role === "user") {
-    return { id: entry.id, role: "user", content: entry.content };
-  }
-  return { id: entry.id, role: "assistant", content: entry.content };
+/** Converts shared transcript entries into the AG-UI message shape. */
+export function toAguiMessages(entries: TranscriptEntry[]): AguiMessage[] {
+  return entries.map((entry) => {
+    if (entry.role === "reasoning") {
+      return {
+        id: entry.id,
+        role: "reasoning",
+        content: entry.content,
+        ...(entry.encryptedValue === undefined
+          ? {}
+          : { encryptedValue: entry.encryptedValue }),
+      } as AguiMessage;
+    }
+    if (entry.role === "tool") {
+      return {
+        id: entry.id,
+        role: "tool",
+        content: entry.content,
+        toolCallId: entry.toolCallId ?? entry.id,
+        ...(entry.error === undefined ? {} : { error: entry.error }),
+        ...(entry.name === undefined
+          ? {}
+          : {
+              metadata: {
+                "travel.tool": {
+                  name: entry.name,
+                  status: entry.error === undefined ? "ok" : "error",
+                },
+              },
+            }),
+      } as AguiMessage;
+    }
+    if (entry.role === "user") {
+      return { id: entry.id, role: "user", content: entry.content } as AguiMessage;
+    }
+    return {
+      id: entry.id,
+      role: "assistant",
+      ...(entry.content.length === 0 ? {} : { content: entry.content }),
+      ...(entry.toolCalls === undefined || entry.toolCalls.length === 0
+        ? {}
+        : {
+            toolCalls: entry.toolCalls.map((toolCall) => ({
+              id: toolCall.id,
+              type: "function" as const,
+              function: {
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+              },
+            })),
+          }),
+    } as AguiMessage;
+  });
 }
 
 function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]): void {

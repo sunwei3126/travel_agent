@@ -55,7 +55,8 @@ function makeFakeService(): TravelServiceApi {
       }
       return { submissionId };
     },
-    async getTranscript() {
+    async getTranscript(tripId) {
+      if (!trips.has(tripId)) throw new Error(`Trip not found: ${tripId}`);
       return [];
     },
     async *watchEvents(tripId) {
@@ -161,6 +162,35 @@ describe("REST routes", () => {
       payload: { content: "泰山", requestId: "r1" },
     });
     expect(response.statusCode).toBe(404);
+  });
+
+  it("returns the AG-UI transcript for a trip", async () => {
+    const service = makeFakeService();
+    service.getTranscript = async (tripId: string) => {
+      if (tripId === "missing") throw new Error(`Trip not found: ${tripId}`);
+      return [
+        { id: "r1", role: "reasoning", content: "想" },
+        { id: "a1", role: "assistant", content: "你好" },
+      ] as any;
+    };
+    const app = buildServer({ service });
+    const tripId = await createTripId(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/trips/${tripId}/transcript`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { id: "r1", role: "reasoning", content: "想" },
+      { id: "a1", role: "assistant", content: "你好" },
+    ]);
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/trips/missing/transcript",
+    });
+    expect(missing.statusCode).toBe(404);
   });
 });
 

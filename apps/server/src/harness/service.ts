@@ -2,7 +2,6 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { Model, Models } from "@earendil-works/pi-ai";
-import { contentText } from "@earendil-works/pi-ai";
 import {
   defineExtension,
   Harness,
@@ -34,6 +33,7 @@ import {
   TripSourcesDoc,
 } from "../trips/docs";
 import { TripIndexStore } from "../trips/index-store";
+import { toTranscriptEntries } from "./transcript";
 
 /** One event from the pi-durable conversation event stream. */
 export type PiEvent = AgentEvent;
@@ -211,24 +211,7 @@ export class TravelService {
     const conversation = await this.requireConversationById(tripId);
     const state = await conversation.viewState(this.context);
     try {
-      const entries: TranscriptEntry[] = [];
-      for (const entry of state.value.entries) {
-        const message = entry.model?.[0];
-        if (message === undefined) continue;
-        if (message.role === "user") {
-          entries.push({ id: String(entry.id), role: "user", content: contentText(message.content) });
-        } else if (message.role === "assistant") {
-          entries.push({ id: String(entry.id), role: "assistant", content: contentText(message.content) });
-        } else if (message.role === "toolResult") {
-          entries.push({
-            id: String(entry.id),
-            role: "tool",
-            content: contentText(message.content),
-            name: message.toolName,
-          });
-        }
-      }
-      return entries;
+      return toTranscriptEntries(state.value.entries);
     } finally {
       state.dispose();
     }

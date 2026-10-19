@@ -74,6 +74,14 @@ export function registerAguiRoute(app: FastifyInstance, service: TravelServiceAp
         initialWatch = await events.next();
         await service.submitMessage(tripId, content, runId);
         entries = await service.getTranscript(tripId);
+        const lastEntry = entries[entries.length - 1];
+        if (lastEntry?.role !== "user" || lastEntry.content !== content) {
+          entries.push({
+            id: `pending-user-${runId}`,
+            role: "user",
+            content,
+          });
+        }
       } catch (error) {
         abortController.abort();
         void events.return?.()?.catch(() => {});

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { toAguiMessages } from "../../agui/mapper";
 import type { CreateTripInput } from "../../harness/service";
 import { validateBrief } from "../../plan/validate";
 import type { TravelServiceApi } from "../app";
@@ -60,6 +61,18 @@ export function registerTripRoutes(app: FastifyInstance, service: TravelServiceA
       throw error;
     }
   });
+
+  app.get<{ Params: { tripId: string } }>(
+    "/api/trips/:tripId/transcript",
+    async (request, reply) => {
+      try {
+        return toAguiMessages(await service.getTranscript(request.params.tripId));
+      } catch (error) {
+        if (isNotFoundError(error)) return reply.code(404).send({ error: (error as Error).message });
+        throw error;
+      }
+    },
+  );
 
   app.post<{
     Params: { tripId: string };

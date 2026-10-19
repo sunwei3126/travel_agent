@@ -52,7 +52,13 @@ describe("AG-UI event mapper", () => {
     expect((events[0] as any).messages).toEqual([
       { id: "m1", role: "user", content: "hi" },
       { id: "m2", role: "assistant", content: "yo" },
-      { id: "m3", role: "tool", content: "ok", toolCallId: "m3" },
+      {
+        id: "m3",
+        role: "tool",
+        content: "ok",
+        toolCallId: "m3",
+        metadata: { "travel.tool": { name: "deepseek_search", status: "ok" } },
+      },
     ]);
     expect((events[1] as any).snapshot).toEqual({
       brief: {},
@@ -60,6 +66,61 @@ describe("AG-UI event mapper", () => {
       sources: {},
       research: { searchCount: 1, fetchCount: 2, running: false },
     });
+  });
+
+  it("builds reasoning, assistant tool calls, and tool errors into the snapshot", () => {
+    const events = buildSnapshot({
+      threadId: "t1",
+      runId: "r1",
+      entries: [
+        { id: "r1", role: "reasoning", content: "先想一下", encryptedValue: "sig" },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "你好",
+          toolCalls: [
+            { id: "tc1", name: "deepseek_search", arguments: '{"query":"泰山"}' },
+          ],
+        },
+        {
+          id: "t1",
+          role: "tool",
+          content: "找到 3 条",
+          toolCallId: "tc1",
+          name: "deepseek_search",
+          error: "boom",
+        },
+      ] as any,
+      brief: {},
+      plan: { days: [] },
+      sources: {},
+      research: { searchCount: 1, fetchCount: 2 },
+      running: false,
+    });
+
+    expect((events[0] as any).messages).toEqual([
+      { id: "r1", role: "reasoning", content: "先想一下", encryptedValue: "sig" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "你好",
+        toolCalls: [
+          {
+            id: "tc1",
+            type: "function",
+            function: { name: "deepseek_search", arguments: '{"query":"泰山"}' },
+          },
+        ],
+      },
+      {
+        id: "t1",
+        role: "tool",
+        content: "找到 3 条",
+        toolCallId: "tc1",
+        error: "boom",
+        metadata: { "travel.tool": { name: "deepseek_search", status: "error" } },
+      },
+    ]);
   });
 
   it("maps the real pi-durable assistant text lifecycle with one message id", () => {
