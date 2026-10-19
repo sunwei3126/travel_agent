@@ -137,6 +137,8 @@ async function main(): Promise<void> {
     }
   }
 
+  assert(factCount > 0, "plan contains no fact claims");
+
   const budget = snapshot.plan.budget;
   assert(budget !== undefined, "plan.budget is missing");
 

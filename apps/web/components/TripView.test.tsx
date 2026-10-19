@@ -1,9 +1,12 @@
 import type { TripSnapshot } from "@pi-demo/shared";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { snapshot } = vi.hoisted((): { snapshot: TripSnapshot } => {
+const { snapshot, useCoAgentMock } = vi.hoisted((): {
+  snapshot: TripSnapshot;
+  useCoAgentMock: ReturnType<typeof vi.fn>;
+} => {
   const day = (dayIndex: number) => ({
     dayIndex,
     date: `2026-10-${25 + dayIndex}`,
@@ -19,6 +22,7 @@ const { snapshot } = vi.hoisted((): { snapshot: TripSnapshot } => {
   });
 
   return {
+    useCoAgentMock: vi.fn(),
     snapshot: {
       trip: {
         tripId: "t1",
@@ -51,7 +55,7 @@ const { snapshot } = vi.hoisted((): { snapshot: TripSnapshot } => {
 });
 
 vi.mock("@copilotkit/react-core", () => ({
-  useCoAgent: () => ({ state: {}, running: false }),
+  useCoAgent: useCoAgentMock,
   CopilotKit: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -68,6 +72,11 @@ vi.mock("../hooks/useTripSnapshot", () => ({
 import { TripView } from "./TripView";
 
 describe("TripView", () => {
+  beforeEach(() => {
+    useCoAgentMock.mockReset();
+    useCoAgentMock.mockReturnValue({ state: {}, running: false });
+  });
+
   it("shows the chat, cards, missing fields, research counts, and budget", () => {
     render(<TripView tripId="t1" initial={snapshot} />);
 
@@ -76,5 +85,58 @@ describe("TripView", () => {
     expect(screen.getByText("目的地")).toBeInTheDocument();
     expect(screen.getByText(/搜索 12/)).toBeInTheDocument();
     expect(screen.getByText(/¥3000/)).toBeInTheDocument();
+  });
+
+  it("prefers live state when its day cards are newer", () => {
+    useCoAgentMock.mockReturnValue({
+      running: false,
+      state: {
+        brief: snapshot.brief,
+        plan: {
+          days: [
+            {
+              ...snapshot.plan.days[0],
+              title: "实时第一天",
+              updatedAt: "2026-10-20T00:00:00.000Z",
+            },
+          ],
+        },
+        sources: {},
+        research: { searchCount: 20, fetchCount: 9, running: false },
+      },
+    });
+
+    render(<TripView tripId="t1" initial={snapshot} />);
+
+    expect(screen.getByText("实时第一天")).toBeInTheDocument();
+    expect(screen.getAllByTestId("day-card")).toHaveLength(1);
+    expect(screen.getByText(/搜索 20/)).toBeInTheDocument();
+  });
+
+  it("keeps the durable state when live day cards are older", () => {
+    useCoAgentMock.mockReturnValue({
+      running: false,
+      state: {
+        brief: snapshot.brief,
+        plan: {
+          days: [
+            {
+              ...snapshot.plan.days[0],
+              title: "旧实时",
+              updatedAt: "2026-10-18T00:00:00.000Z",
+            },
+          ],
+        },
+        sources: {},
+        research: { searchCount: 99, fetchCount: 0, running: false },
+      },
+    });
+
+    render(<TripView tripId="t1" initial={snapshot} />);
+
+    expect(screen.queryByText("旧实时")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("day-card")).toHaveLength(3);
+    expect(screen.getByText(/搜索 12/)).toBeInTheDocument();
+    expect(screen.queryByText(/搜索 99/)).not.toBeInTheDocument();
   });
 });

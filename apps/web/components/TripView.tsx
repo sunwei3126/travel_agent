@@ -3,6 +3,7 @@
 import { useCoAgent } from "@copilotkit/react-core";
 import {
   missingBriefFields,
+  type TripPlan,
   type TripSnapshot,
   type TripState,
 } from "@pi-demo/shared";
@@ -13,16 +14,22 @@ import { PlanBoard } from "./PlanBoard";
 import { ResearchProgress } from "./ResearchProgress";
 import { TravelChat } from "./TravelChat";
 
-type LiveTripState = TripState & { updatedAt?: string };
+function newestDayUpdatedAt(plan: TripPlan): string {
+  return plan.days.reduce(
+    (newest, day) => (day.updatedAt > newest ? day.updatedAt : newest),
+    "",
+  );
+}
 
-function hasNewerUpdatedAt(
-  live: LiveTripState | undefined,
+function hasNewerPlan(
+  live: TripState | undefined,
   durable: TripSnapshot,
-): live is LiveTripState {
+): live is TripState {
+  if (live == null || live.plan == null) return false;
+  const liveUpdatedAt = newestDayUpdatedAt(live.plan);
   return (
-    live != null &&
-    typeof live.updatedAt === "string" &&
-    live.updatedAt > durable.trip.updatedAt
+    liveUpdatedAt.length > 0 &&
+    liveUpdatedAt > newestDayUpdatedAt(durable.plan)
   );
 }
 
@@ -33,15 +40,17 @@ function TripViewContent({
   tripId: string;
   initial?: TripSnapshot;
 }) {
-  const { snapshot } = useTripSnapshot(tripId);
-  const { state } = useCoAgent<LiveTripState>({ name: "travel" });
+  const { state, running: agentRunning } = useCoAgent<TripState>({
+    name: "travel",
+  });
+  const { snapshot } = useTripSnapshot(tripId, agentRunning);
 
   const durable = snapshot ?? initial;
   if (durable === undefined) {
     return <p className="empty">加载中…</p>;
   }
 
-  const live = hasNewerUpdatedAt(state, durable) ? state : undefined;
+  const live = hasNewerPlan(state, durable) ? state : undefined;
   const brief = live?.brief ?? durable.brief;
   const plan = live?.plan ?? durable.plan;
   const research = live?.research ?? durable.research;

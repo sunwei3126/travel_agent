@@ -83,6 +83,7 @@ brief, plan, sources, and research counters are durable docs, so a restarted
 server resumes an in-flight run. Research tools call DeepSeek and record
 source ids on every claim; `finalize` validates the plan, computes the budget
 summary, and the sketch tool produces a sanitized SVG per day (or a
-placeholder with `svgStatus: "failed"`). The UI combines the durable snapshot
-polled from `GET /api/trips/:id` with live CopilotKit state, preferring the
-newer state.
+placeholder with `svgStatus: "failed"`). The UI polls `GET /api/trips/:id`
+every two seconds while the trip or the CopilotKit agent is running, and
+combines that durable snapshot with live CopilotKit state, preferring the
+state whose newest day card is newer.

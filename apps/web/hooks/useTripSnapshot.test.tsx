@@ -59,6 +59,41 @@ describe("useTripSnapshot", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("re-arms polling when the agent starts after an idle snapshot", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: false }))
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: true }))
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(
+      ({ active }) => useTripSnapshot("t1", active),
+      { initialProps: { active: false } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.snapshot?.running).toBe(false);
+
+    rerender({ active: true });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.snapshot?.running).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.current.snapshot?.running).toBe(false);
+  });
+
   it("does not fetch again after unmount", async () => {
     vi.useFakeTimers();
     const fetchMock = vi
