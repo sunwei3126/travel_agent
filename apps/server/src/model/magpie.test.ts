@@ -11,6 +11,15 @@ it("registers the magpie Anthropic-compatible provider", () => {
   expect(model.id).toBe("openrouter/deepseek/deepseek-v4.1-flash-1017");
 });
 
+it("resolves a non-empty credential for the magpie model", async () => {
+  const models = createMagpieModels({});
+  const model = resolveMagpieModel(models, {});
+  expect(model.headers?.["x-api-key"]).toBe("magpie");
+
+  const auth = await models.getAuth(model);
+  expect(auth?.auth.headers?.["x-api-key"]).toBe("magpie");
+});
+
 describe.skipIf(process.env.MAGPIE_LIVE !== "1")("magpie live", () => {
   it(
     "completes a simple prompt",

@@ -18,6 +18,8 @@ function magpieModel(baseUrl: string, modelId: string): Model<"anthropic-message
     provider: "magpie",
     baseUrl,
     reasoning: true,
+    // pi-ai's Anthropic API requires a non-empty credential; magpie accepts any local key.
+    headers: { "x-api-key": "magpie" },
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 1048576,
