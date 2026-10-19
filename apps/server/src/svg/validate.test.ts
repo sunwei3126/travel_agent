@@ -26,6 +26,10 @@ it("rejects missing viewBox, oversized SVG, and malformed XML", () => {
   expect(validateAndSanitizeSvg("<svg viewBox='0 0 10 10'>").ok).toBe(false);
 });
 
+it("rejects well-formedness warnings such as unquoted attributes", () => {
+  expect(validateAndSanitizeSvg('<svg viewBox="0 0 100 100" width=100></svg>').ok).toBe(false);
+});
+
 it("placeholder includes the escaped day title", () => {
   expect(placeholderSvg("Day 1 <山>")).toContain("Day 1 &lt;山&gt;");
 });

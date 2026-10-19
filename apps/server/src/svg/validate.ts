@@ -54,10 +54,10 @@ export function validateAndSanitizeSvg(
   let document: Document;
   try {
     document = new DOMParser({
-      onError(level, message) {
-        if (level !== "warning") {
-          parseErrors.push(message);
-        }
+      onError(_level, message) {
+        // For image/svg+xml, xmldom reports warnings for well-formedness
+        // problems (e.g. unquoted attributes) that it may silently repair.
+        parseErrors.push(message);
       },
     }).parseFromString(extracted, "image/svg+xml");
   } catch (error) {
