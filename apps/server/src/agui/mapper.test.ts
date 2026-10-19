@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSnapshot, mapPiEvents } from "./mapper";
+import { buildSnapshot, createPiEventMapper, mapPiEvents } from "./mapper";
 
 const card = { dayIndex: 1, date: "2026-10-26", title: "D1", blocks: [], scenery: [], food: [], transport: [], estimatedCostCny: [0, 0], sources: [], svgStatus: "pending", updatedAt: "" } as any;
 
@@ -119,5 +119,73 @@ describe("AG-UI event mapper", () => {
         message: "tool boom",
       } as any),
     ).toEqual([]);
+  });
+
+  it("emits text carried by the first committed partial", () => {
+    const mapper = createPiEventMapper();
+    const events = mapper.map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 1, content: [{ type: "text", text: "你" }] },
+    } as any);
+
+    expect(events).toMatchObject([
+      { type: "TEXT_MESSAGE_START" },
+      { type: "TEXT_MESSAGE_CONTENT", delta: "你" },
+    ]);
+  });
+
+  it("emits only the not-yet-sent suffix from message_end", () => {
+    const mapper = createPiEventMapper();
+    mapper.map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 1, content: [{ type: "text", text: "你" }] },
+    } as any);
+
+    const events = mapper.map({
+      type: "message_end",
+      entry: { id: 7, model: [{ role: "assistant", content: [{ type: "text", text: "你好" }] }] },
+    } as any);
+
+    expect(events).toMatchObject([
+      { type: "TEXT_MESSAGE_CONTENT", delta: "好" },
+      { type: "TEXT_MESSAGE_END" },
+    ]);
+  });
+
+  it("assigns distinct ids to consecutive assistant messages", () => {
+    const mapper = createPiEventMapper();
+    const first = mapper.map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 1, content: [{ type: "text", text: "A" }] },
+    } as any);
+    mapper.map({
+      type: "message_end",
+      entry: { id: 1, model: [{ role: "assistant", content: [{ type: "text", text: "A" }] }] },
+    } as any);
+    const second = mapper.map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 2, content: [{ type: "text", text: "B" }] },
+    } as any);
+
+    const firstId = (first[0] as any).messageId;
+    const secondId = (second[0] as any).messageId;
+    expect(firstId).not.toBe(secondId);
+  });
+
+  it("does not reopen the message for a text_start change", () => {
+    const mapper = createPiEventMapper();
+    mapper.map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 1, content: [{ type: "text", text: "A" }] },
+    } as any);
+
+    const events = mapper.map({
+      type: "message_update",
+      usage: {},
+      changes: [{ type: "text_start", contentIndex: 1, block: { type: "text", text: "B" } }],
+    } as any);
+
+    expect(events.some((event) => event.type === "TEXT_MESSAGE_START")).toBe(false);
+    expect(events).toMatchObject([{ type: "TEXT_MESSAGE_CONTENT", delta: "\nB" }]);
   });
 });
