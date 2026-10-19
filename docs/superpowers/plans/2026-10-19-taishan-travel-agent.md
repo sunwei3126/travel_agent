@@ -917,7 +917,7 @@ git commit -m "feat: add Fastify REST and AG-UI endpoints"
 
 **Interfaces:**
 - Produces: `listTrips(): Promise<TripIndexEntry[]>`, `createTrip(input): Promise<TripIndexEntry>`, `getTrip(tripId): Promise<TripSnapshot>`
-- `apiFetch` prefixes `NEXT_PUBLIC_API_URL` (default `http://127.0.0.1:4000`).
+- `apiFetch` prefixes `NEXT_PUBLIC_API_URL` (default `/backend`); `next.config.ts` rewrites `/backend/:path*` to `API_URL` (default `http://127.0.0.1:4000`) so the browser stays same-origin and no CORS is needed.
 - `NewTripForm` fields: title, destination, startDate, days; submit navigates to `/trips/${tripId}`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -948,7 +948,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement the scaffold and components**
 
-Use `next.config.ts` with `transpilePackages: ["@pi-demo/shared"]`. Use React Testing Library with `jsdom`. The home page fetches the trip list and renders `TripList` + `NewTripForm`.
+Use `next.config.ts` with `transpilePackages: ["@pi-demo/shared"]` and a `rewrites()` entry mapping `/backend/:path*` to `process.env.API_URL ?? "http://127.0.0.1:4000"`. Use React Testing Library with `jsdom`. The home page fetches the trip list and renders `TripList` + `NewTripForm`.
 
 - [ ] **Step 4: Run the tests and verify they pass**
 
@@ -1129,7 +1129,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement `TripView` and the scripts**
 
-`TripView` reads `useTripSnapshot(tripId)` for the durable snapshot and `useCoAgent<TripState>({ name: "travel" })` for live state; prefer the live state when it has a newer `updatedAt`. The `TripView` test uses a snapshot whose brief is missing `destination`, so the checklist renders `目的地`; mock `useCoAgent` to return an empty state. The acceptance scripts use `tsx` and Node's global `fetch`.
+`TripView` reads `useTripSnapshot(tripId)` for the durable snapshot and `useCoAgent<TripState>({ name: "travel" })` for live state; prefer the live state when it has a newer `updatedAt`. The `TripView` test uses a snapshot whose brief is missing `destination`, so the checklist renders `目的地`; mock `useCoAgent` to return an empty state. Add `tsx` to the root devDependencies and `dev`/`start` scripts to `apps/server/package.json` so the root `npm run dev` starts the API. The acceptance scripts use `tsx` and Node's global `fetch`.
 
 - [ ] **Step 4: Run the tests and verify they pass**
 
