@@ -216,7 +216,7 @@ export function createSearchTool(deps: TravelDeps) {
 
       const hits = await deps.deepseek.search(args.query, options);
 
-      const { sourceIds, sources } = await api.commit(async (tx) => {
+      const { sourceIds, candidates } = await api.commit(async (tx) => {
         const research = await tx.doc(TripResearchDoc, api.conversationId);
         enforceCap(research.searchCount, deps.caps.search, "search");
         const stored = await tx.doc(TripSourcesDoc, api.conversationId);
@@ -228,12 +228,14 @@ export function createSearchTool(deps: TravelDeps) {
           ...(research.searchAttempts ?? {}),
           [cacheKey]: (research.searchAttempts?.[cacheKey] ?? 0) + 1,
         };
-        return { sourceIds: ids, sources: stored };
+        // The document is a draft owned by this commit: copy plain values out
+        // rather than reading the settled overlay later.
+        return {
+          sourceIds: ids,
+          candidates: ids.map((id) => ({ ...stored[id] })),
+        };
       }, context);
 
-      const candidates = sourceIds
-        .map((id) => sources[id])
-        .filter((source): source is TripSource => source !== undefined);
       const fetched = await autoFetch(
         api,
         context,
@@ -242,7 +244,16 @@ export function createSearchTool(deps: TravelDeps) {
         candidates,
         fetchRemaining,
       );
-      const outputSources = mergeSources(sources, fetched);
+      // Committed read after autoFetch, so the output includes both the search
+      // results and the newly fetched content.
+      const latest = await api.snapshot(
+        TripSourcesDoc,
+        api.conversationId,
+        context,
+      );
+      const fallback: TripSources = {};
+      for (const candidate of candidates) fallback[candidate.id] = candidate;
+      const outputSources = mergeSources(latest ?? fallback, fetched);
       const outputIds = withFetchedIds(sourceIds, fetched);
 
       return {

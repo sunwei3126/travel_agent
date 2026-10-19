@@ -69,7 +69,8 @@ export function createFetchTool(deps: TravelDeps) {
           ...(research.fetchAttempts ?? {}),
           [attemptKey]: (research.fetchAttempts?.[attemptKey] ?? 0) + 1,
         };
-        return { sourceId: id, source: stored[id] };
+        // Copy the value out: the draft is only valid inside this commit.
+        return { sourceId: id, source: { ...stored[id] } };
       }, context);
 
       const outputSource =
