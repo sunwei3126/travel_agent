@@ -5,13 +5,19 @@ import {
 } from "@copilotkit/runtime";
 import { createAgentConfig } from "../../../../lib/agent-config";
 
-type RouteContext = { params: Promise<{ tripId: string }> };
+type RouteContext = { params: Promise<{ slug?: string[] }> };
 
-export async function POST(
+async function handleRequestForTrip(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
-  const { tripId } = await context.params;
+  const { slug } = await context.params;
+  const tripId = slug?.[0];
+
+  if (!tripId) {
+    return Response.json({ error: "tripId is required" }, { status: 400 });
+  }
+
   const agent = new HttpAgent(createAgentConfig(tripId));
   // @copilotkit/runtime and @copilotkit/shared bundle separate @ag-ui/client
   // copies. Their private `_debug` field makes the otherwise identical agent
@@ -26,3 +32,8 @@ export async function POST(
 
   return handleRequest(request);
 }
+
+export const GET = handleRequestForTrip;
+export const POST = handleRequestForTrip;
+export const PUT = handleRequestForTrip;
+export const DELETE = handleRequestForTrip;

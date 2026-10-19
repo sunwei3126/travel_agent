@@ -68,7 +68,7 @@ const {
 
 vi.mock("@copilotkit/react-core", () => ({
   useCoAgent: useCoAgentMock,
-  useCopilotChatHeadless_c: () => ({ sendMessage: sendMessageMock }),
+  useCopilotChatInternal: () => ({ sendMessage: sendMessageMock }),
   CopilotKit: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 

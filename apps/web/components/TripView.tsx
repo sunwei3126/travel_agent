@@ -2,7 +2,7 @@
 
 import {
   useCoAgent,
-  useCopilotChatHeadless_c,
+  useCopilotChatInternal,
 } from "@copilotkit/react-core";
 import {
   missingBriefFields,
@@ -55,7 +55,9 @@ function TripViewContent({
     tripId,
     agentRunning,
   );
-  const { sendMessage } = useCopilotChatHeadless_c();
+  // `useCopilotChatHeadless_c` is license-gated and becomes non-functional
+  // without a public API key. Use the same free hook CopilotChat uses.
+  const { sendMessage } = useCopilotChatInternal();
 
   const durable = snapshot ?? initial;
   if (durable === undefined) {
