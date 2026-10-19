@@ -7,7 +7,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pi-demo/shared": "*"
+    "@pi-demo/shared": "*",
+    "@xmldom/xmldom": "^0.9.12"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
