@@ -190,7 +190,7 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
       const message = asRecord(generation?.message);
       if (message?.role !== "assistant") return;
       const target = state.current ?? newMessage(state, undefined);
-      appendMessageContent(state, target, message.content, out);
+      appendMessageContent(state, target, message.content, out, false);
       return;
     }
 
@@ -202,7 +202,9 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
         return;
       }
       const message = newMessage(state, explicitId);
-      if (source?.role === "assistant") appendMessageContent(state, message, source.content, out);
+      if (source?.role === "assistant") {
+        appendMessageContent(state, message, source.content, out, false);
+      }
       return;
     }
 
@@ -224,37 +226,36 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
 
         if (change.type === "thinking_start") {
           const block = asRecord(change.block);
-          const reasoning = ensureReasoning(message, index, out);
-          appendReasoningBlock(reasoning, block, out);
+          if (block === undefined || !reasoningCovered(message, index, block)) {
+            const reasoning = ensureReasoning(message, index, out);
+            appendReasoningBlock(reasoning, block, out);
+          }
         } else if (change.type === "thinking_delta" && typeof change.delta === "string") {
           const reasoning = ensureReasoning(message, index, out);
           appendReasoningDelta(reasoning, change.delta, out);
         } else if (change.type === "toolcall_start") {
           const block = asRecord(change.block);
           if (block?.type === "toolCall") {
+            closeReasoning(message, out);
             startToolCallBlock(state, message, index, block, out);
           }
-        } else if (change.type === "toolcall_delta" && typeof change.delta === "string") {
-          const toolCallId = message.toolCallsByIndex.get(index);
-          const trace = toolCallId === undefined ? undefined : state.tools.get(toolCallId);
-          if (trace !== undefined) {
-            trace.argsSent += change.delta;
-            out.push({
-              type: EventType.TOOL_CALL_ARGS,
-              toolCallId: trace.id,
-              delta: change.delta,
-            });
-          }
+        } else if (change.type === "toolcall_delta") {
+          // pi-durable sends value fragments (`path` + `delta`), not JSON.
+          // Keep the call open and send the authoritative JSON at message_end
+          // or tool_execution_start instead of corrupting the argument stream.
         } else if (change.type === "text_start" || change.type === "block") {
           const block = asRecord(change.block);
           if (block?.type === "thinking") {
-            const reasoning = ensureReasoning(message, index, out);
-            appendReasoningBlock(reasoning, block, out);
+            if (!reasoningCovered(message, index, block)) {
+              const reasoning = ensureReasoning(message, index, out);
+              appendReasoningBlock(reasoning, block, out);
+            }
           } else if (block?.type === "text" && typeof block.text === "string") {
             closeReasoning(message, out);
             appendBlockText(message, index, block.text, out);
           } else if (block?.type === "toolCall") {
-            finishToolCallBlock(state, message, index, block, out);
+            closeReasoning(message, out);
+            startToolCallBlock(state, message, index, block, out);
           }
         } else if (change.type === "text_delta" && typeof change.delta === "string") {
           closeReasoning(message, out);
@@ -262,7 +263,9 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
           appendBlockText(message, index, previous + change.delta, out);
         } else if (change.type === "message") {
           const full = asRecord(change.message);
-          if (full?.role === "assistant") appendMessageContent(state, message, full.content, out);
+          if (full?.role === "assistant") {
+            appendMessageContent(state, message, full.content, out, false);
+          }
         }
       }
       return;
@@ -279,7 +282,7 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
         asText(event.messageId) !== undefined
       ) {
         const message = ensureMessage(state, event);
-        if (assistant) appendMessageContent(state, message, source!.content, out);
+        if (assistant) appendMessageContent(state, message, source!.content, out, true);
         closeReasoning(message, out);
         if (message.open) {
           out.push({ type: EventType.TEXT_MESSAGE_END, messageId: message.id });
@@ -486,6 +489,7 @@ function appendMessageContent(
   message: MessageState,
   content: unknown,
   out: AGUIEvent[],
+  final: boolean,
 ): void {
   if (typeof content === "string") {
     closeReasoning(message, out);
@@ -497,15 +501,38 @@ function appendMessageContent(
     const block = asRecord(value);
     if (block === undefined) continue;
     if (block.type === "thinking") {
+      // message_end replays blocks that already streamed. Do not open a new
+      // reasoning span for text that was fully emitted before the replay.
+      if (reasoningCovered(message, index, block)) continue;
       const reasoning = ensureReasoning(message, index, out);
       appendReasoningBlock(reasoning, block, out);
     } else if (block.type === "text" && typeof block.text === "string") {
       closeReasoning(message, out);
       appendBlockText(message, index, block.text, out);
     } else if (block.type === "toolCall") {
-      finishToolCallBlock(state, message, index, block, out);
+      closeReasoning(message, out);
+      if (final) {
+        finishToolCallBlock(state, message, index, block, out);
+      } else {
+        startToolCallBlock(state, message, index, block, out);
+      }
     }
   }
+}
+
+/** Whether a thinking block replayed at message_end was already emitted. */
+function reasoningCovered(
+  message: MessageState,
+  index: number,
+  block: UnknownRecord,
+): boolean {
+  const existing = message.reasoning.get(index);
+  if (existing === undefined) return false;
+  if (block.redacted === true) {
+    return existing.encryptedSent || existing.emitted.length > 0;
+  }
+  const text = typeof block.thinking === "string" ? block.thinking : "";
+  return text.length <= existing.emitted.length;
 }
 
 /** Emits only the suffix of a full message that has not been sent yet. */
@@ -544,9 +571,10 @@ function ensureReasoning(
     messageId,
     spanId: `${messageId}-span`,
     contentIndex: index,
-    emitted: "",
+    // Carry emitted text so a reopened span only sends the new suffix.
+    emitted: existing?.emitted ?? "",
     open: true,
-    encryptedSent: false,
+    encryptedSent: existing?.encryptedSent ?? false,
   };
   message.reasoning.set(index, reasoning);
   out.push({
@@ -661,7 +689,7 @@ function finishToolCallBlock(
   message.toolCallsByIndex.set(index, toolCallId);
   const trace = startTool(state, toolCallId, name, message.id, out);
   appendToolArgs(trace, JSON.stringify(block.arguments ?? {}), out);
-  endTool(state, trace, out);
+  // The call stays active until tool_execution_start (or run_end) ends it.
 }
 
 function startTool(

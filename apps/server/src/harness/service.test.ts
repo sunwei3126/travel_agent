@@ -1,7 +1,14 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
+import {
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxThinking,
+  fauxToolCall,
+} from "@earendil-works/pi-ai";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createRegistry, type Registry } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
@@ -101,6 +108,57 @@ it("upgrades a legacy trip to the configured thinking level on its next message"
   }
   expect(seen[0]).toBe("low");
   await low.close();
+});
+
+it("keeps thinking and tool calls in the transcript", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
+  const env = testEnv();
+  env.faux.setResponses([
+    fauxAssistantMessage(
+      [fauxThinking("先想一下"), fauxToolCall("trip_update_brief", { origin: "上海" })],
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage([fauxText("已记录")]),
+  ]);
+  const service = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+    thinkingLevel: "low",
+  } as never);
+  const trip = await service.createTrip({
+    title: "泰山",
+    destination: "泰山",
+    startDate: "2026-10-26",
+    days: 3,
+  });
+  await service.submitMessage(trip.tripId, "从上海出发", "r-transcript");
+
+  let transcript = await service.getTranscript(trip.tripId);
+  for (
+    let i = 0;
+    i < 200 &&
+    !transcript.some((entry) => entry.role === "assistant" && entry.toolCalls?.length);
+    i++
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    transcript = await service.getTranscript(trip.tripId);
+  }
+
+  expect(
+    transcript.some((entry) => entry.role === "reasoning" && entry.content === "先想一下"),
+  ).toBe(true);
+  const assistant = transcript.find(
+    (entry) => entry.role === "assistant" && entry.toolCalls?.length,
+  );
+  expect(assistant?.toolCalls?.[0]).toMatchObject({ name: "trip_update_brief" });
+  expect(
+    transcript.some(
+      (entry) => entry.role === "tool" && entry.name === "trip_update_brief",
+    ),
+  ).toBe(true);
+  await service.close();
 });
 
 it("returns the existing submission for a duplicate request id", async () => {

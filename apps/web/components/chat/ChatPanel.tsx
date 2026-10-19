@@ -9,7 +9,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { getTranscript } from "../../lib/api";
+import { getTranscript, getTrip } from "../../lib/api";
 import {
   buildChatSegments,
   type ToolProgress,
@@ -41,16 +41,57 @@ export function ChatPanel({ tripId }: { tripId: string }) {
   const stickToBottom = useRef(true);
 
   useEffect(() => {
-    if (!isAvailable || messages.length > 0 || historyLoaded.current) return;
+    if (!isAvailable || historyLoaded.current) return;
+    // A live conversation may already be in memory when the runtime becomes
+    // available; do not replace it with committed history.
+    if (messages.length > 0) return;
     historyLoaded.current = true;
-    void getTranscript(tripId)
-      .then((history) => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const refresh = async (): Promise<void> => {
+      const history = await getTranscript(tripId);
+      if (!cancelled && history.length > 0) setMessages(history);
+    };
+
+    // A reload during a run only sees committed entries; keep checking the
+    // durable snapshot and refresh the chat once the run finishes.
+    const waitForRunEnd = async (): Promise<void> => {
+      try {
+        const trip = await getTrip(tripId);
+        if (cancelled) return;
+        if (trip.running) {
+          timer = setTimeout(() => void waitForRunEnd(), 2000);
+          return;
+        }
+        await refresh();
+      } catch {
+        timer = setTimeout(() => void waitForRunEnd(), 2000);
+      }
+    };
+
+    void (async () => {
+      try {
+        const [history, trip] = await Promise.all([
+          getTranscript(tripId),
+          getTrip(tripId),
+        ]);
+        if (cancelled) return;
         if (history.length > 0) setMessages(history);
-      })
-      .catch(() => {
+        if (trip.running) timer = setTimeout(() => void waitForRunEnd(), 2000);
+      } catch {
         // The next run's MESSAGES_SNAPSHOT restores the transcript.
-      });
-  }, [isAvailable, messages.length, setMessages, tripId]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+    // `messages` is intentionally read once: later updates are live state, not
+    // a reason to refetch history.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAvailable, setMessages, tripId]);
 
   useEffect(() => {
     if (agent === undefined || agent === null) return;

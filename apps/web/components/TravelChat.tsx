@@ -18,7 +18,7 @@ export function TravelChat({
       agent="travel"
       enableInspector={false}
     >
-      <ChatPanel tripId={tripId} />
+      <ChatPanel key={tripId} tripId={tripId} />
       {children}
     </CopilotKit>
   );

@@ -203,33 +203,95 @@ describe("AG-UI event mapper", () => {
     });
   });
 
-  it("maps streamed tool calls and dedupes the execution start", () => {
+  it("does not replay reasoning that a text block already closed", () => {
     const mapper = createPiEventMapper();
-    const start = mapper.map({
+    mapper.map({
       type: "message_start",
       message: { role: "assistant", content: [] },
     } as any);
-    const stream = mapper.map({
+    const thinking = mapper.map({
       type: "message_update",
       changes: [
-        {
-          type: "toolcall_start",
-          contentIndex: 0,
-          block: { type: "toolCall", id: "tc1", name: "deepseek_search", arguments: {} },
-        },
-        {
-          type: "toolcall_delta",
-          contentIndex: 0,
-          path: ["query"],
-          delta: '{"query":"泰山"}',
-        },
+        { type: "thinking_start", contentIndex: 0, block: { type: "thinking", thinking: "" } },
+        { type: "thinking_delta", contentIndex: 0, delta: "先想一下" },
       ],
+    } as any);
+    const text = mapper.map({
+      type: "message_update",
+      changes: [
+        { type: "text_start", contentIndex: 1, block: { type: "text", text: "" } },
+        { type: "text_delta", contentIndex: 1, delta: "你好" },
+      ],
+    } as any);
+    const replay = mapper.map({
+      type: "message_update",
+      changes: [
+        { type: "block", contentIndex: 0, block: { type: "thinking", thinking: "先想一下" } },
+      ],
+    } as any);
+    const end = mapper.map({
+      type: "message_end",
+      entry: {
+        id: 7,
+        model: [
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "先想一下" },
+              { type: "text", text: "你好" },
+            ],
+          },
+        ],
+      },
+    } as any);
+
+    expect(replay).toEqual([]);
+    const all = [...thinking, ...text, ...replay, ...end];
+    const contents = all.filter((event) => event.type === "REASONING_MESSAGE_CONTENT");
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toMatchObject({ delta: "先想一下" });
+    expect(all.filter((event) => event.type === "REASONING_MESSAGE_START")).toHaveLength(1);
+  });
+
+  it("keeps a partial tool call open and sends authoritative arguments once", () => {
+    const mapper = createPiEventMapper();
+    const start = mapper.map({
+      type: "message_start",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "tc1", name: "deepseek_search", arguments: {} }],
+      },
+    } as any);
+    const delta = mapper.map({
+      type: "message_update",
+      changes: [
+        { type: "toolcall_delta", contentIndex: 0, path: ["query"], delta: "泰山" },
+      ],
+    } as any);
+    const committed = mapper.map({
+      type: "message_end",
+      entry: {
+        id: 7,
+        model: [
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                id: "tc1",
+                name: "deepseek_search",
+                arguments: { query: "泰山", count: 5 },
+              },
+            ],
+          },
+        ],
+      },
     } as any);
     const fire = mapper.map({
       type: "tool_execution_start",
       toolCallId: "tc1",
       toolName: "deepseek_search",
-      args: { query: "泰山" },
+      args: { query: "泰山", count: 5 },
     } as any);
     const result = mapper.map({
       type: "tool_execution_end",
@@ -249,12 +311,15 @@ describe("AG-UI event mapper", () => {
       },
     } as any);
 
-    expect(start).toEqual([]);
-    expect(stream.map((event) => event.type)).toEqual([
-      "TOOL_CALL_START",
-      "TOOL_CALL_ARGS",
-    ]);
-    expect(fire.filter((event) => event.type === "TOOL_CALL_START")).toHaveLength(0);
+    const all = [...start, ...delta, ...committed, ...fire];
+    expect(start.map((event) => event.type)).toEqual(["TOOL_CALL_START"]);
+    expect(delta).toEqual([]);
+    const args = all
+      .filter((event) => event.type === "TOOL_CALL_ARGS")
+      .map((event) => (event as any).delta as string)
+      .join("");
+    expect(args).toBe(JSON.stringify({ query: "泰山", count: 5 }));
+    expect(all.filter((event) => event.type === "TOOL_CALL_END")).toHaveLength(1);
     expect(fire.map((event) => event.type)).toEqual(["TOOL_CALL_END"]);
     expect(result.map((event) => event.type)).toEqual(["TOOL_CALL_RESULT"]);
     expect(result[0]).toMatchObject({

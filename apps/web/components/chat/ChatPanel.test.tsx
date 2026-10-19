@@ -11,9 +11,10 @@ vi.mock("@copilotkit/react-core/v2", () => ({
 }));
 vi.mock("../../lib/api", () => ({
   getTranscript: vi.fn(async () => []),
+  getTrip: vi.fn(async () => ({ running: false })),
 }));
 
-import { getTranscript } from "../../lib/api";
+import { getTranscript, getTrip } from "../../lib/api";
 import { ChatPanel } from "./ChatPanel";
 
 const messages: Message[] = [
@@ -77,6 +78,8 @@ describe("ChatPanel", () => {
     chat.hook.mockReset();
     vi.mocked(getTranscript).mockReset();
     vi.mocked(getTranscript).mockResolvedValue([]);
+    vi.mocked(getTrip).mockReset();
+    vi.mocked(getTrip).mockResolvedValue({ running: false } as never);
   });
 
   it("renders messages, reasoning, and tool traces collapsed by default", () => {
@@ -216,6 +219,23 @@ describe("ChatPanel", () => {
     expect(within(tool).getByText(/运行中/)).toBeInTheDocument();
     fireEvent.click(within(tool).getByText(/搜索资料/));
     expect(within(tool).getByText("搜索中")).toBeInTheDocument();
+  });
+
+  it("refreshes history when a run that was in progress ends", async () => {
+    const { setMessages } = setup({ messages: [] });
+    vi.mocked(getTranscript).mockResolvedValueOnce([]);
+    vi.mocked(getTrip)
+      .mockResolvedValueOnce({ running: true } as never)
+      .mockResolvedValueOnce({ running: false } as never);
+    vi.mocked(getTranscript).mockResolvedValueOnce(messages);
+
+    render(<ChatPanel tripId="t1" />);
+
+    await waitFor(() => expect(setMessages).toHaveBeenCalledWith(messages), {
+      timeout: 5000,
+    });
+    expect(getTrip).toHaveBeenCalledTimes(2);
+    expect(getTranscript).toHaveBeenCalledTimes(2);
   });
 
   it("loads history when the chat starts empty", async () => {
