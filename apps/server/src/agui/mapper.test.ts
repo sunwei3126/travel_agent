@@ -172,6 +172,41 @@ describe("AG-UI event mapper", () => {
     expect(firstId).not.toBe(secondId);
   });
 
+  it("keeps the separator for a streamed block that starts empty and does not duplicate its tail", () => {
+    const mapper = createPiEventMapper();
+    const start = mapper.map({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 1, content: [{ type: "text", text: "A" }] },
+    } as any);
+    const update = mapper.map({
+      type: "message_update",
+      usage: {},
+      changes: [
+        { type: "text_start", contentIndex: 1, block: { type: "text", text: "" } },
+        { type: "text_delta", contentIndex: 1, delta: "B" },
+      ],
+    } as any);
+    const end = mapper.map({
+      type: "message_end",
+      entry: {
+        id: 7,
+        model: [
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "A" }, { type: "text", text: "B" }],
+          },
+        ],
+      },
+    } as any);
+
+    expect(start).toMatchObject([
+      { type: "TEXT_MESSAGE_START" },
+      { type: "TEXT_MESSAGE_CONTENT", delta: "A" },
+    ]);
+    expect(update).toMatchObject([{ type: "TEXT_MESSAGE_CONTENT", delta: "\nB" }]);
+    expect(end.map((event) => event.type)).toEqual(["TEXT_MESSAGE_END"]);
+  });
+
   it("does not reopen the message for a text_start change", () => {
     const mapper = createPiEventMapper();
     mapper.map({

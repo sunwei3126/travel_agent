@@ -116,7 +116,7 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
       }
       const message = newMessage(state, explicitId);
       out.push({ type: EventType.TEXT_MESSAGE_START, messageId: message.id });
-      if (source?.role === "assistant") appendInitialText(message, source.content, out);
+      if (source?.role === "assistant") appendMessageText(message, source.content, out);
       return;
     }
 
@@ -161,7 +161,7 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
         asText(event.messageId) !== undefined
       ) {
         const message = ensureMessage(state, event);
-        if (assistant) appendSuffix(message, assistantText(source!.content), out);
+        if (assistant) appendMessageText(message, source!.content, out);
         out.push({ type: EventType.TEXT_MESSAGE_END, messageId: message.id });
         state.current = undefined;
       }
@@ -233,26 +233,6 @@ function ensureMessage(state: MapperState, event: UnknownRecord): MessageState {
   return state.current ?? newMessage(state, explicitId);
 }
 
-/** Emits the text carried by the first committed partial or whole message. */
-function appendInitialText(message: MessageState, content: unknown, out: AGUIEvent[]): void {
-  if (typeof content === "string") {
-    appendText(message, content, out);
-    return;
-  }
-  if (!Array.isArray(content)) return;
-  for (const [index, value] of content.entries()) {
-    const block = asRecord(value);
-    if (block?.type === "text" && typeof block.text === "string") {
-      message.blocks.set(index, block.text);
-    }
-  }
-  const text = assistantText(content);
-  if (text.length > 0) {
-    message.emitted = text;
-    out.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: message.id, delta: text });
-  }
-}
-
 /** Emits the part of a text block that has not been sent yet. */
 function appendBlockText(
   message: MessageState,
@@ -260,18 +240,17 @@ function appendBlockText(
   fullText: string,
   out: AGUIEvent[],
 ): void {
-  const previous = message.blocks.get(index);
-  if (previous === undefined) {
+  const previous = message.blocks.get(index) ?? "";
+  if (fullText.length <= previous.length) {
     message.blocks.set(index, fullText);
-    if (fullText.length === 0) return;
-    const separator = message.emitted.length > 0 ? "\n" : "";
-    appendText(message, separator + fullText, out);
     return;
   }
-  if (fullText.length <= previous.length) return;
   const delta = fullText.slice(previous.length);
   message.blocks.set(index, fullText);
-  appendText(message, delta, out);
+  // An empty block has not started yet, so its first text still needs the
+  // separator that contentText puts between text blocks.
+  const separator = previous.length === 0 && message.emitted.length > 0 ? "\n" : "";
+  appendText(message, separator + delta, out);
 }
 
 /** Emits the not-yet-sent part of a whole assistant message. */
@@ -305,12 +284,6 @@ function appendText(message: MessageState, delta: string, out: AGUIEvent[]): voi
 
 function contentIndexOf(change: UnknownRecord): number {
   return typeof change.contentIndex === "number" ? change.contentIndex : 0;
-}
-
-function assistantText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return contentText(content);
 }
 
 function toolResultMessageId(event: UnknownRecord, toolCallId: string): string {
