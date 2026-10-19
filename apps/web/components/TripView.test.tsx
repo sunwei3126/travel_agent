@@ -72,10 +72,8 @@ vi.mock("@copilotkit/react-core", () => ({
   CopilotKit: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@copilotkit/react-ui", () => ({
-  CopilotChat: ({ labels }: { labels?: { title?: string } }) => (
-    <div>{labels?.title}</div>
-  ),
+vi.mock("./chat/ChatPanel", () => ({
+  ChatPanel: () => <div>旅行助手</div>,
 }));
 
 vi.mock("../hooks/useTripSnapshot", () => ({

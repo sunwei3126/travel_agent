@@ -19,17 +19,11 @@ vi.mock("@copilotkit/react-core", () => ({
   ),
 }));
 
-vi.mock("@copilotkit/react-ui", () => ({
-  CopilotChat: ({
-    labels,
-  }: {
-    labels?: { title?: string; placeholder?: string };
-  }) => (
-    <div
-      data-testid="copilot-chat"
-      data-title={labels?.title}
-      data-placeholder={labels?.placeholder}
-    />
+vi.mock("./chat/ChatPanel", () => ({
+  ChatPanel: ({ tripId }: { tripId: string }) => (
+    <div data-testid="chat-panel" data-trip-id={tripId}>
+      旅行助手
+    </div>
   ),
 }));
 
@@ -55,14 +49,11 @@ describe("TravelChat", () => {
       "data-agent",
       "travel",
     );
-    expect(screen.getByTestId("copilot-chat")).toHaveAttribute(
-      "data-placeholder",
-      "说说你想去哪、玩几天、在意什么",
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
+      "data-trip-id",
+      "abc",
     );
-    expect(screen.getByTestId("copilot-chat")).toHaveAttribute(
-      "data-title",
-      "旅行助手",
-    );
+    expect(screen.getByText("旅行助手")).toBeInTheDocument();
   });
 
   it("encodes the trip id in the runtime URL", () => {

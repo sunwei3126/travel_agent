@@ -1,3 +1,4 @@
+import type { Message } from "@ag-ui/core";
 import type { TripIndexEntry, TripSnapshot } from "@pi-demo/shared";
 
 const baseUrl = (process.env.NEXT_PUBLIC_API_URL ?? "/backend").replace(/\/$/, "");
@@ -39,4 +40,10 @@ export function createTrip(input: CreateTripInput): Promise<TripIndexEntry> {
 
 export function getTrip(tripId: string): Promise<TripSnapshot> {
   return apiFetch<TripSnapshot>(`/api/trips/${encodeURIComponent(tripId)}`);
+}
+
+export function getTranscript(tripId: string): Promise<Message[]> {
+  return apiFetch<Message[]>(
+    `/api/trips/${encodeURIComponent(tripId)}/transcript`,
+  );
 }
