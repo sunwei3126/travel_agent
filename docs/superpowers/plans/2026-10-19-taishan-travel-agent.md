@@ -1005,7 +1005,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-Export a `createAgent(tripId: string, baseUrl = process.env.AGENT_URL ?? "http://127.0.0.1:4000/agui")` helper for testing. The route uses it. `CopilotChat` labels: input placeholder "说说你想去哪、玩几天、在意什么", assistant name "旅行助手".
+Export a `createAgentConfig(tripId: string, baseUrl = process.env.AGENT_URL ?? "http://127.0.0.1:4000/agui"): { url: string }` helper for testing. The route uses it to construct `new HttpAgent(createAgentConfig(tripId))`. `CopilotChat` labels: input placeholder "说说你想去哪、玩几天、在意什么", assistant name "旅行助手".
 
 - [ ] **Step 4: Run the tests and verify they pass**
 
