@@ -4,7 +4,7 @@ import { isBriefComplete, missingBriefFields } from "@pi-demo/shared";
 import type { DayCard } from "@pi-demo/shared";
 import { TripBriefDoc, TripSourcesDoc, TripPlanDoc, upsertDayCard } from "../../trips/docs";
 import { validateDayCard } from "../../plan/validate";
-import type { TravelDeps } from "../extension";
+import type { TravelDeps } from "../deps";
 
 const Claim = Type.Object({
   text: Type.String(),
