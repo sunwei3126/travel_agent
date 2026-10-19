@@ -1,0 +1,19 @@
+{
+  "name": "pi-demo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "acceptance:live": "node -e \"console.error('acceptance:live is not implemented yet'); process.exit(1)\"",
+    "acceptance:crash": "node -e \"console.error('acceptance:crash is not implemented yet'); process.exit(1)\""
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}
