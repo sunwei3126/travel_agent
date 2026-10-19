@@ -8,7 +8,7 @@ it("registers the magpie Anthropic-compatible provider", () => {
   expect(model.provider).toBe("magpie");
   expect(model.api).toBe("anthropic-messages");
   expect(model.baseUrl).toBe("http://127.0.0.1:3425");
-  expect(model.id).toBe("openrouter/deepseek/deepseek-v4.1-flash-1017");
+  expect(model.id).toBe("deepseek/deepseek-flash");
 });
 
 it("resolves a non-empty credential for the magpie model", async () => {

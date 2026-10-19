@@ -64,4 +64,13 @@ describe("TravelChat", () => {
       "旅行助手",
     );
   });
+
+  it("encodes the trip id in the runtime URL", () => {
+    render(<TravelChat tripId="a/b c" />);
+
+    expect(screen.getByTestId("copilotkit")).toHaveAttribute(
+      "data-runtime-url",
+      "/api/copilotkit/a%2Fb%20c",
+    );
+  });
 });

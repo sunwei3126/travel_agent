@@ -8,7 +8,7 @@ import {
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3425";
-const DEFAULT_MODEL_ID = "openrouter/deepseek/deepseek-v4.1-flash-1017";
+const DEFAULT_MODEL_ID = "deepseek/deepseek-flash";
 
 function magpieModel(baseUrl: string, modelId: string): Model<"anthropic-messages"> {
   return {
@@ -22,7 +22,7 @@ function magpieModel(baseUrl: string, modelId: string): Model<"anthropic-message
     headers: { "x-api-key": "magpie" },
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 1048576,
+    contextWindow: 1000000,
     maxTokens: 393216,
   };
 }

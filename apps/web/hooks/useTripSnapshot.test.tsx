@@ -52,5 +52,32 @@ describe("useTripSnapshot", () => {
     expect(result.current.snapshot?.running).toBe(false);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fetch again after unmount", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ ...snapshot, running: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { unmount } = renderHook(() => useTripSnapshot("t1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

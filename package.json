@@ -9,10 +9,11 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
-    "acceptance:live": "node -e \"console.error('acceptance:live is not implemented yet'); process.exit(1)\"",
-    "acceptance:crash": "node -e \"console.error('acceptance:crash is not implemented yet'); process.exit(1)\""
+    "acceptance:live": "tsx scripts/acceptance-live.ts",
+    "acceptance:crash": "bash scripts/crash-resume.sh"
   },
   "devDependencies": {
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"
   }
