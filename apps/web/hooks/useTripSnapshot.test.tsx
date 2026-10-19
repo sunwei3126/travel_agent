@@ -1,0 +1,56 @@
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { useTripSnapshot } from "./useTripSnapshot";
+
+const snapshot = {
+  trip: {
+    tripId: "t1",
+    conversationId: "c1",
+    title: "泰山",
+    destination: "泰山",
+    startDate: "2026-10-26",
+    days: 3,
+    updatedAt: "2026-10-19",
+    status: "active",
+  },
+  brief: {},
+  plan: {},
+  sources: {},
+  research: { searchCount: 0, fetchCount: 0 },
+};
+
+const jsonResponse = (body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+
+describe("useTripSnapshot", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("polls while running and stops when idle", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: true }))
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useTripSnapshot("t1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.snapshot?.running).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(result.current.snapshot?.running).toBe(false);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
