@@ -15,7 +15,7 @@
 - Node.js must be `>=22.19.0`; the machine has `22.22.1`.
 - Single process owns `data/pi.sqlite`; bind the server to `127.0.0.1`.
 - UI copy and generated plan content are Chinese.
-- Env: `DEEPSEEK_API_KEY`, `MAGPIE_BASE_URL=http://127.0.0.1:3425`, `MAGPIE_MODEL=openrouter/deepseek/deepseek-v4.1-flash-1017`, `PORT=4000`, `DATA_DIR=./data`, `AGENT_URL=http://127.0.0.1:4000/agui`.
+- Env: `DEEPSEEK_API_KEY`, `MAGPIE_BASE_URL=http://127.0.0.1:3425`, `MAGPIE_MODEL=deepseek/deepseek-flash`, `PORT=4000`, `DATA_DIR=./data`, `AGENT_URL=http://127.0.0.1:4000/agui`.
 - Never expose `DEEPSEEK_API_KEY` or any model key to the browser.
 - DeepSeek: 5 QPS per endpoint; at most 40 search and 30 fetch calls per trip.
 - Completed search/fetch calls are never repeated; an in-flight call may repeat once after a crash (at-most-once).
@@ -465,7 +465,7 @@ git commit -m "feat: add SVG sketch generation with retry and fallback"
 - Consumes: pi-ai `createModels`, `createProvider`, `anthropicMessagesApi`.
 - Produces: `createMagpieModels(env?: NodeJS.ProcessEnv): Models`
 - Produces: `resolveMagpieModel(models: Models, env?: NodeJS.ProcessEnv): Model`
-- Defaults: base URL `http://127.0.0.1:3425`, model `openrouter/deepseek/deepseek-v4.1-flash-1017`, context window `1048576`, max output `393216`.
+- Defaults: base URL `http://127.0.0.1:3425`, model `deepseek/deepseek-flash`, context window `1000000`, max output `393216`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -479,7 +479,7 @@ it("registers the magpie Anthropic-compatible provider", () => {
   expect(model.provider).toBe("magpie");
   expect(model.api).toBe("anthropic-messages");
   expect(model.baseUrl).toBe("http://127.0.0.1:3425");
-  expect(model.id).toBe("openrouter/deepseek/deepseek-v4.1-flash-1017");
+  expect(model.id).toBe("deepseek/deepseek-flash");
 });
 ```
 
