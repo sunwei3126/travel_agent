@@ -787,7 +787,8 @@ git commit -m "feat: add travel service with durable trips"
 **Interfaces:**
 - Consumes: `@ag-ui/core` event types.
 - Produces: `buildSnapshot(snapshot: { threadId: string; runId: string; entries: TranscriptEntry[]; brief: TripBrief; plan: TripPlan; sources: TripSources; research: TripResearch; running: boolean }): AguiEvent[]` (emits `MESSAGES_SNAPSHOT` then `STATE_SNAPSHOT`).
-- Produces: `mapPiEvents(batch: PiEvent[]): AguiEvent[]`:
+- Produces: `createPiEventMapper(): { map(batch: PiEvent | PiEvent[]): AguiEvent[] }` with per-run state for message ids and emitted text.
+- Produces: `mapPiEvents(batch: PiEvent | PiEvent[]): AguiEvent[]` as a stateless convenience (fresh mapper per call):
   - assistant text start/delta/end → `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_END`
   - tool start/end → `TOOL_CALL_START` / `TOOL_CALL_RESULT`
   - run terminal error → `RUN_ERROR`
@@ -820,7 +821,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement the mapper**
 
-Use the exact AG-UI event field names from `@ag-ui/core` (`type`, `threadId`, `runId`, `messageId`, `delta`, `toolCallId`, `toolCallName`, `content`, `snapshot`). Keep message ids stable across deltas.
+Use the exact AG-UI event field names from `@ag-ui/core` (`type`, `threadId`, `runId`, `messageId`, `delta`, `toolCallId`, `toolCallName`, `content`, `snapshot`). Keep message ids stable across deltas. Because pi-durable commits the first partial inside `message_start.message` and the tail inside `message_end.entry.model[0]`, the mapper must emit text from both and only the not-yet-emitted suffix at the end. Each assistant message gets a distinct id; `text_start` changes must not emit a second `TEXT_MESSAGE_START`.
 
 - [ ] **Step 4: Run the test and verify it passes**
 
@@ -890,7 +891,7 @@ Use Fastify's `reply.raw` for SSE, with `Content-Type: text/event-stream`, `Cach
 
 `main.ts` wires env → `createMagpieModels`/`resolveMagpieModel` → `DeepSeekClient` → a `generate` closure using `models.completeSimple` → `generateDaySketch` → `createTravelExtension` → `createRegistry` → `TravelService.open` → `buildServer`.
 
-The `/agui` route submits the last user message with `runId` as the request id, emits `buildSnapshot({ entries: await service.getTranscript(tripId), ...snapshot })`, then iterates `service.watchEvents(tripId)`, maps each batch with `mapPiEvents`, and ends after the mapped `RUN_FINISHED` or `RUN_ERROR`.
+The `/agui` route submits the last user message with `runId` as the request id, emits `RUN_STARTED`, emits `buildSnapshot({ entries: await service.getTranscript(tripId), ...snapshot })`, then iterates `service.watchEvents(tripId)` with one `createPiEventMapper()` per run (the initial pi-durable `snapshot` event is ignored by the mapper), and ends with `RUN_FINISHED` or `RUN_ERROR`. The route also needs `service.listTrips()` for `GET /api/trips`; add that method to `TravelService` with a focused test. Task 12's `main.ts` passes `caps: { search: 40, fetch: 30 }`, a real `DeepSeekClient`, and a `generateSketch` built from `generateDaySketch`.
 
 - [ ] **Step 4: Run the test and verify it passes**
 
