@@ -17,6 +17,13 @@ export function createFetchTool(deps: TravelDeps) {
     structuredOutputSchema: Type.Object({ sourceId: Type.String() }),
     replay: "safe",
     execute: async (args, api, context) => {
+      const current = await api.snapshot(
+        TripResearchDoc,
+        api.conversationId,
+        context,
+      );
+      enforceCap(current?.fetchCount ?? 0, deps.caps.fetch, "fetch");
+
       const result = await deps.deepseek.fetch(args.url);
 
       const sourceId = await api.commit(async (tx) => {

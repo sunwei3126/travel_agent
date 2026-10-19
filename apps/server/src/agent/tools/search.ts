@@ -21,6 +21,13 @@ export function createSearchTool(deps: TravelDeps) {
     structuredOutputSchema: Type.Object({ sourceIds: Type.Array(Type.String()) }),
     replay: "safe",
     execute: async (args, api, context) => {
+      const current = await api.snapshot(
+        TripResearchDoc,
+        api.conversationId,
+        context,
+      );
+      enforceCap(current?.searchCount ?? 0, deps.caps.search, "search");
+
       const hits = await deps.deepseek.search(args.query, {
         count: args.count,
         oriQuestion: args.oriQuestion,
