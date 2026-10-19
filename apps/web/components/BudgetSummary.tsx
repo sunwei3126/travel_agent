@@ -12,6 +12,9 @@ export function BudgetSummary({ budget }: { budget: BudgetSummaryData }) {
         background: "var(--surface)",
         border: "1px solid var(--border)",
         borderRadius: "8px",
+        ...(budget.withinBudget
+          ? {}
+          : { borderColor: "#b42318", background: "#fef3f2" }),
       }}
     >
       <h2>预算</h2>

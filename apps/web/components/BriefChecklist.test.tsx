@@ -32,9 +32,13 @@ describe("BriefChecklist", () => {
       />,
     );
 
-    expect(screen.getByText(/3100/).closest(".budget-summary")).toHaveClass(
-      "over-budget",
-    );
+    const summary = screen.getByText(/3100/).closest(".budget-summary");
+
+    expect(summary).toHaveClass("over-budget");
+    expect(summary).toHaveStyle({
+      borderColor: "#b42318",
+      backgroundColor: "#fef3f2",
+    });
   });
 
   it("does not mark a within-budget summary", () => {
@@ -44,8 +48,9 @@ describe("BriefChecklist", () => {
       />,
     );
 
-    expect(screen.getByText(/2900/).closest(".budget-summary")).not.toHaveClass(
-      "over-budget",
-    );
+    const summary = screen.getByText(/2900/).closest(".budget-summary");
+
+    expect(summary).not.toHaveClass("over-budget");
+    expect(summary).not.toHaveStyle({ borderColor: "#b42318" });
   });
 });
