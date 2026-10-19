@@ -1,7 +1,9 @@
 import { defineTool } from "@earendil-works/pi-durable";
 import { Type } from "@earendil-works/pi-ai";
 import { missingBriefFields } from "@pi-demo/shared";
+import { validateBrief } from "../../plan/validate";
 import { TripBriefDoc, mergeBrief } from "../../trips/docs";
+import type { TravelDeps } from "../deps";
 
 const parameters = Type.Object({
   destination: Type.Optional(Type.String({ description: "Destination city or area" })),
@@ -16,27 +18,36 @@ const parameters = Type.Object({
   assumptions: Type.Optional(Type.Array(Type.String(), { description: "Assumptions made explicit to the user" })),
 });
 
-export const updateBriefTool = defineTool({
-  name: "trip_update_brief",
-  description: "Merge new or corrected trip requirements into the durable trip brief.",
-  parameters,
-  structuredOutputSchema: Type.Object({ missing: Type.Array(Type.String()) }),
-  replay: "safe",
-  execute: async (args, api, context) => {
-    const missing = await api.commit(async (tx) => {
-      const brief = await tx.doc(TripBriefDoc, api.conversationId);
-      Object.assign(brief, mergeBrief(brief, args));
-      return missingBriefFields(brief);
-    }, context);
+export function createUpdateBriefTool(deps: TravelDeps) {
+  return defineTool({
+    name: "trip_update_brief",
+    description: "Merge new or corrected trip requirements into the durable trip brief.",
+    parameters,
+    structuredOutputSchema: Type.Object({ missing: Type.Array(Type.String()) }),
+    replay: "safe",
+    execute: async (args, api, context) => {
+      const missing = await api.commit(async (tx) => {
+        const brief = await tx.doc(TripBriefDoc, api.conversationId);
+        const merged = mergeBrief(brief, args);
+        // Incremental updates are allowed to remain incomplete, but a real
+        // calendar date and a positive day count are enforced immediately.
+        const errors = validateBrief(merged, deps.now(), { requireComplete: false });
+        if (errors.length > 0) {
+          throw new Error(`Invalid trip brief: ${errors.join("; ")}`);
+        }
+        Object.assign(brief, merged);
+        return missingBriefFields(brief);
+      }, context);
 
-    return {
-      output: [
-        {
-          type: "text",
-          text: missing.length === 0 ? "Brief is complete." : `Missing brief fields: ${missing.join(", ")}`,
-        },
-      ],
-      structuredOutput: { missing },
-    };
-  },
-});
+      return {
+        output: [
+          {
+            type: "text",
+            text: missing.length === 0 ? "Brief is complete." : `Missing brief fields: ${missing.join(", ")}`,
+          },
+        ],
+        structuredOutput: { missing },
+      };
+    },
+  });
+}

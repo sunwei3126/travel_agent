@@ -107,7 +107,25 @@ export type TripIndexEntry = {
   status: "active" | "completed";
 };
 
-export type TripResearch = { searchCount: number; fetchCount: number };
+export type TripResearch = {
+  searchCount: number;
+  fetchCount: number;
+  /**
+   * Completed API calls per normalized search cache key. A key is recorded only
+   * after its result is committed, so a key that is present was already cached.
+   */
+  searchAttempts?: Record<string, number>;
+  /** Completed API calls per normalized fetched URL. */
+  fetchAttempts?: Record<string, number>;
+};
+
+/** A parked or faulted background task surfaced to the user. */
+export type TripFault = {
+  kind: string;
+  message: string;
+  taskId?: string;
+  at: string;
+};
 
 export type TripState = {
   brief: TripBrief;
@@ -123,6 +141,7 @@ export type TripSnapshot = {
   sources: TripSources;
   research: TripResearch;
   running: boolean;
+  faults?: TripFault[];
 };
 
 const isNonEmptyString = (value: unknown): value is string =>

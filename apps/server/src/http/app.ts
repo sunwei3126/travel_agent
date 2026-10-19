@@ -1,4 +1,9 @@
-import type { TranscriptEntry, TripIndexEntry, TripSnapshot } from "@pi-demo/shared";
+import type {
+  TranscriptEntry,
+  TripFault,
+  TripIndexEntry,
+  TripSnapshot,
+} from "@pi-demo/shared";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import type { CreateTripInput, PiEvent } from "../harness/service";
 import { registerAguiRoute } from "./routes/agui";
@@ -15,7 +20,9 @@ export type TravelServiceApi = {
     requestId: string,
   ): Promise<{ submissionId: string }>;
   getTranscript(tripId: string): Promise<TranscriptEntry[]>;
-  watchEvents(tripId: string): AsyncIterable<PiEvent>;
+  watchEvents(tripId: string, signal?: AbortSignal): AsyncIterable<PiEvent>;
+  recordFault(tripId: string, fault: TripFault): Promise<void>;
+  clearFaults(tripId: string): Promise<void>;
   close(): Promise<void>;
 };
 

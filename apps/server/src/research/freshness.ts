@@ -26,8 +26,8 @@ const freshnessRank = (freshness: Freshness): number => {
 const scoreOf = (source: TripSource): number =>
   (source.authority ?? 0) * 10 + (source.rerankScore ?? 0);
 
-export function rankSources(sources: TripSource[]): TripSource[] {
-  const now = new Date();
+export function rankSources(sources: TripSource[], at: Date = new Date()): TripSource[] {
+  const now = at;
   return [...sources].sort((a, b) => {
     const byFreshness =
       freshnessRank(freshnessOf(a, now)) - freshnessRank(freshnessOf(b, now));

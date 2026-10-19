@@ -10,8 +10,22 @@ it("builds a messages snapshot and a state snapshot", () => {
 });
 
 it("maps text and tool events with stable ids", () => {
-  expect(mapPiEvents([{ type: "message_update", messageId: "m1", delta: "你" } as any])[0]).toMatchObject({ type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "你" });
-  expect(mapPiEvents([{ type: "tool_execution_start", toolCallId: "tc1", toolName: "deepseek_search" } as any])[0]).toMatchObject({ type: "TOOL_CALL_START", toolCallId: "tc1" });
+  expect(
+    mapPiEvents([{ type: "message_update", messageId: "m1", delta: "你" } as any]),
+  ).toMatchObject([
+    { type: "TEXT_MESSAGE_START", messageId: "m1" },
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "你" },
+  ]);
+  expect(
+    mapPiEvents([
+      {
+        type: "tool_execution_start",
+        toolCallId: "tc1",
+        toolName: "deepseek_search",
+        args: { query: "泰山" },
+      } as any,
+    ])[0],
+  ).toMatchObject({ type: "TOOL_CALL_START", toolCallId: "tc1" });
 });
 
 describe("AG-UI event mapper", () => {
@@ -64,8 +78,18 @@ describe("AG-UI event mapper", () => {
     } as any);
 
     expect(start.map((event) => event.type)).toEqual(["TEXT_MESSAGE_START"]);
-    expect(update).toMatchObject([{ type: "TEXT_MESSAGE_CONTENT", delta: "泰山" }]);
-    expect(end.map((event) => event.type)).toEqual(["TEXT_MESSAGE_END"]);
+    // A standalone update has no prior start in this stateless mapping, so it
+    // opens the message before emitting content.
+    expect(update.map((event) => event.type)).toEqual([
+      "TEXT_MESSAGE_START",
+      "TEXT_MESSAGE_CONTENT",
+    ]);
+    expect(update.at(-1)).toMatchObject({ type: "TEXT_MESSAGE_CONTENT", delta: "泰山" });
+    // The stateless end mapping has not seen a start, so it opens then closes.
+    expect(end.map((event) => event.type)).toEqual([
+      "TEXT_MESSAGE_START",
+      "TEXT_MESSAGE_END",
+    ]);
 
     const ids = [start[0], update[0], end[0]].map((event) => (event as any).messageId);
     expect(new Set(ids).size).toBe(1);
@@ -99,18 +123,26 @@ describe("AG-UI event mapper", () => {
     });
   });
 
-  it("maps a failed pi task to RUN_ERROR", () => {
-    expect(
-      mapPiEvents({
-        type: "task_failed",
-        taskId: 1,
-        kind: "pi.generation",
-        message: "boom",
-      } as any)[0],
-    ).toMatchObject({ type: "RUN_ERROR", message: "boom", code: "pi.generation" });
+  it("maps a failed generation task to a distinct fault and RUN_ERROR", () => {
+    const events = mapPiEvents({
+      type: "task_failed",
+      taskId: 1,
+      kind: "pi.generation",
+      message: "boom",
+    } as any);
+    expect(events[0]).toMatchObject({
+      type: "CUSTOM",
+      name: "travel.task_failed",
+      value: { kind: "pi.generation", message: "boom", taskId: "1" },
+    });
+    expect(events[1]).toMatchObject({
+      type: "RUN_ERROR",
+      message: "boom",
+      code: "pi.generation",
+    });
   });
 
-  it("does not end the run when only a tool task fails", () => {
+  it("surfaces a tool task fault without ending the run", () => {
     expect(
       mapPiEvents({
         type: "task_failed",
@@ -118,7 +150,87 @@ describe("AG-UI event mapper", () => {
         kind: "pi.tool",
         message: "tool boom",
       } as any),
-    ).toEqual([]);
+    ).toEqual([
+      {
+        type: "CUSTOM",
+        name: "travel.task_failed",
+        value: { kind: "pi.tool", message: "tool boom", taskId: "2" },
+      },
+    ]);
+  });
+
+  it("emits TOOL_CALL_ARGS and TOOL_CALL_END around a tool call", () => {
+    const mapper = createPiEventMapper();
+    const start = mapper.map({
+      type: "tool_execution_start",
+      toolCallId: "tc1",
+      toolName: "deepseek_search",
+      args: { query: "泰山 门票" },
+    } as any);
+    const end = mapper.map({
+      type: "tool_execution_end",
+      toolCallId: "tc1",
+      toolName: "deepseek_search",
+      entry: { id: 9, model: [{ role: "toolResult", content: "ok" }] },
+    } as any);
+
+    expect(start).toMatchObject([
+      { type: "TOOL_CALL_START", toolCallId: "tc1" },
+      { type: "TOOL_CALL_ARGS", toolCallId: "tc1" },
+    ]);
+    expect(JSON.parse((start[1] as any).delta)).toEqual({ query: "泰山 门票" });
+    expect(end.map((event) => event.type)).toEqual([
+      "TOOL_CALL_END",
+      "TOOL_CALL_RESULT",
+    ]);
+  });
+
+  it("seeds an in-flight generation partial from the watch snapshot", () => {
+    const mapper = createPiEventMapper();
+    const seeded = mapper.map({
+      type: "snapshot",
+      generation: {
+        attempt: 1,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "已收到" }],
+        },
+      },
+    } as any);
+
+    expect(seeded).toMatchObject([
+      { type: "TEXT_MESSAGE_START" },
+      { type: "TEXT_MESSAGE_CONTENT", delta: "已收到" },
+    ]);
+
+    const update = mapper.map({
+      type: "message_update",
+      changes: [{ type: "text_delta", contentIndex: 0, delta: "，正在规划" }],
+    } as any);
+    expect(update).toMatchObject([
+      { type: "TEXT_MESSAGE_CONTENT", delta: "，正在规划" },
+    ]);
+    expect((update[0] as any).messageId).toBe((seeded[1] as any).messageId);
+  });
+
+  it("closes an open message and tool call when the durable run ends", () => {
+    const mapper = createPiEventMapper();
+    mapper.map({
+      type: "message_start",
+      message: { role: "assistant", content: [{ type: "text", text: "A" }] },
+    } as any);
+    mapper.map({
+      type: "tool_execution_start",
+      toolCallId: "tc1",
+      toolName: "deepseek_search",
+      args: {},
+    } as any);
+
+    expect(
+      mapper.map({ type: "run_end", inputs: [] } as any).map(
+        (event) => event.type,
+      ),
+    ).toEqual(["TEXT_MESSAGE_END", "TOOL_CALL_END"]);
   });
 
   it("emits text carried by the first committed partial", () => {

@@ -2,6 +2,7 @@ import type {
   Claim,
   DayBlock,
   DayCard as DayCardData,
+  TripSources,
 } from "@pi-demo/shared";
 import type { CSSProperties } from "react";
 
@@ -95,10 +96,16 @@ function BlockItem({ block }: { block: DayBlock }) {
 
 export function DayCard({
   card,
+  sources,
   justUpdated = false,
+  onRedraw,
+  onEditDay,
 }: {
   card: DayCardData;
+  sources?: TripSources;
   justUpdated?: boolean;
+  onRedraw?: (dayIndex: number) => void;
+  onEditDay?: (dayIndex: number) => void;
 }) {
   return (
     <article className="day-card" data-testid="day-card" style={CARD_STYLE}>
@@ -140,12 +147,41 @@ export function DayCard({
 
       {card.sources.length > 0 && (
         <ul className="day-card-sources">
-          {card.sources.map((source, index) => (
-            <li key={`${source}-${index}`} className="source-chip">
-              {source}
-            </li>
-          ))}
+          {card.sources.map((sourceId, index) => {
+            const source = sources?.[sourceId];
+            return (
+              <li key={`${sourceId}-${index}`} className="source-chip">
+                {source === undefined ? (
+                  sourceId
+                ) : (
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={source.url}
+                  >
+                    {source.title || sourceId}
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {(onRedraw !== undefined || onEditDay !== undefined) && (
+        <div className="day-card-actions">
+          {card.svgStatus === "failed" && onRedraw !== undefined && (
+            <button type="button" onClick={() => onRedraw(card.dayIndex)}>
+              重画
+            </button>
+          )}
+          {onEditDay !== undefined && (
+            <button type="button" onClick={() => onEditDay(card.dayIndex)}>
+              改这一天
+            </button>
+          )}
+        </div>
       )}
     </article>
   );

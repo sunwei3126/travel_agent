@@ -62,6 +62,8 @@ function makeFakeService(): TravelServiceApi {
       if (!trips.has(tripId)) throw new Error(`Trip not found: ${tripId}`);
       yield { type: "snapshot" } as never;
     },
+    async recordFault() {},
+    async clearFaults() {},
     async close() {},
   };
 }
@@ -116,6 +118,22 @@ describe("REST routes", () => {
       payload: { title: "泰山" },
     });
     expect(response.statusCode).toBe(400);
+  });
+
+  it("rejects an impossible calendar date at creation", async () => {
+    const app = buildServer({ service: makeFakeService() });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/trips",
+      payload: {
+        title: "泰山",
+        destination: "泰山",
+        startDate: "2026-02-30",
+        days: 3,
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain("real calendar date");
   });
 
   it("returns the same submission for a duplicate request id", async () => {

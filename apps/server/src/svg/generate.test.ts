@@ -19,3 +19,23 @@ it("falls back to a placeholder after two failures", async () => {
   expect(result.svg).toContain("Day 1");
   expect(result.error).toBeTruthy();
 });
+
+it("treats a thrown generation error as a retryable failure", async () => {
+  const generate = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("provider 500"))
+    .mockResolvedValueOnce('<svg viewBox="0 0 100 100"><rect width="10" height="10"/></svg>');
+  const result = await generateDaySketch({ day, generate });
+  expect(result.status).toBe("ok");
+  expect(generate).toHaveBeenCalledTimes(2);
+  expect(generate.mock.calls[1][0]).toContain("provider 500");
+});
+
+it("returns the placeholder when every attempt throws", async () => {
+  const generate = vi.fn().mockRejectedValue(new Error("network down"));
+  const result = await generateDaySketch({ day, generate });
+  expect(result.status).toBe("failed");
+  expect(result.svg).toContain("Day 1");
+  expect(result.error).toContain("network down");
+  expect(generate).toHaveBeenCalledTimes(2);
+});

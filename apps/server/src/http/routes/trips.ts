@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { CreateTripInput } from "../../harness/service";
+import { validateBrief } from "../../plan/validate";
 import type { TravelServiceApi } from "../app";
 
 const createTripSchema = {
@@ -40,6 +41,12 @@ export function registerTripRoutes(app: FastifyInstance, service: TravelServiceA
     "/api/trips",
     { schema: createTripSchema },
     async (request, reply) => {
+      const errors = validateBrief(request.body, new Date(), {
+        requireComplete: false,
+      });
+      if (errors.length > 0) {
+        return reply.code(400).send({ error: errors.join("; ") });
+      }
       const entry = await service.createTrip(request.body);
       return reply.code(201).send(entry);
     },

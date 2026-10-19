@@ -14,14 +14,40 @@ function buildPrompt(day: DayCard): string {
   ].join("\n");
 }
 
+type Attempt =
+  | { ok: true; svg: string; raw: string }
+  | { ok: false; reason: string; raw: string };
+
+async function attempt(
+  generate: (prompt: string) => Promise<string>,
+  prompt: string,
+): Promise<Attempt> {
+  let raw: string;
+  try {
+    raw = await generate(prompt);
+  } catch (error) {
+    // A thrown generation error is a failed attempt, not an escape hatch that
+    // skips the retry and placeholder path.
+    return {
+      ok: false,
+      raw: "",
+      reason: error instanceof Error ? error.message : "Sketch generation failed",
+    };
+  }
+  const validated = validateAndSanitizeSvg(raw);
+  if (!validated.ok) {
+    return { ok: false, raw, reason: validated.reason };
+  }
+  return { ok: true, svg: validated.svg, raw };
+}
+
 export async function generateDaySketch(opts: {
   day: DayCard;
   generate: (prompt: string) => Promise<string>;
 }): Promise<{ svg: string; status: "ok" | "failed"; error?: string }> {
   const prompt = buildPrompt(opts.day);
 
-  const firstRaw = await opts.generate(prompt);
-  const first = validateAndSanitizeSvg(firstRaw);
+  const first = await attempt(opts.generate, prompt);
   if (first.ok) {
     return { svg: first.svg, status: "ok" };
   }
@@ -30,14 +56,11 @@ export async function generateDaySketch(opts: {
     prompt,
     "",
     `The previous response was rejected: ${first.reason}`,
-    "Previous response:",
-    firstRaw,
-    "",
+    ...(first.raw.length > 0 ? ["Previous response:", first.raw, ""] : []),
     "Return corrected SVG only.",
   ].join("\n");
 
-  const secondRaw = await opts.generate(retryPrompt);
-  const second = validateAndSanitizeSvg(secondRaw);
+  const second = await attempt(opts.generate, retryPrompt);
   if (second.ok) {
     return { svg: second.svg, status: "ok" };
   }

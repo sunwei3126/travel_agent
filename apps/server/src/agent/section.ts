@@ -1,5 +1,6 @@
 import { section } from "@earendil-works/pi-durable";
-import type { TripBrief, TripPlan, TripSources } from "@pi-demo/shared";
+import type { DayCard, TripBrief, TripPlan, TripSources } from "@pi-demo/shared";
+import { freshnessOf, isVerifiedFact, rankSources } from "../research/freshness";
 import { TripBriefDoc, TripPlanDoc, TripSourcesDoc } from "../trips/docs";
 
 type TripContextState = {
@@ -8,8 +9,31 @@ type TripContextState = {
   sources?: Readonly<TripSources> | undefined;
 };
 
+const MAX_BLOCKS_PER_DAY = 8;
+const MAX_SOURCES = 40;
+
+function renderDay(day: DayCard): string {
+  const blocks = day.blocks.slice(0, MAX_BLOCKS_PER_DAY).map((block) => {
+    const cost =
+      block.costCny === undefined ? "" : ` (¥${block.costCny[0]}–¥${block.costCny[1]})`;
+    return `${block.time} ${block.title}${cost}`;
+  });
+  if (day.blocks.length > MAX_BLOCKS_PER_DAY) {
+    blocks.push(`+${day.blocks.length - MAX_BLOCKS_PER_DAY} more blocks`);
+  }
+  const svg = day.svgStatus === "ok" ? "svg=ok" : `svg=${day.svgStatus}`;
+  const parts = [`D${day.dayIndex} ${day.date} ${day.title} [${svg}]`];
+  if (blocks.length > 0) parts.push(`blocks: ${blocks.join(" | ")}`);
+  parts.push(`cost: ¥${day.estimatedCostCny[0]}–¥${day.estimatedCostCny[1]}`);
+  if (day.sources.length > 0) parts.push(`sources: ${day.sources.join(", ")}`);
+  return parts.join("; ");
+}
+
 /** Render the durable trip state as a compact system-prompt section body. */
-export function renderTripContext(state: TripContextState): string | undefined {
+export function renderTripContext(
+  state: TripContextState,
+  now: Date = new Date(),
+): string | undefined {
   const { brief, plan, sources } = state;
   const sourceCount = Object.keys(sources ?? {}).length;
   const hasBrief = brief !== undefined && Object.keys(brief).length > 0;
@@ -36,10 +60,9 @@ export function renderTripContext(state: TripContextState): string | undefined {
   }
 
   if (hasPlan) {
-    const days = plan.days
-      .map((day) => `D${day.dayIndex} ${day.date} ${day.title}`)
-      .join("; ");
-    if (days.length > 0) lines.push(`Plan: ${days}`);
+    for (const day of [...plan.days].sort((a, b) => a.dayIndex - b.dayIndex)) {
+      lines.push(`Plan ${renderDay(day)}`);
+    }
     if (plan.summary !== undefined) lines.push(`Plan summary: ${plan.summary}`);
     if (plan.budget !== undefined) {
       lines.push(
@@ -51,6 +74,21 @@ export function renderTripContext(state: TripContextState): string | undefined {
   }
 
   lines.push(`Sources: ${sourceCount}`);
+  if (sources !== undefined && sourceCount > 0) {
+    const ranked = rankSources(Object.values(sources), now).slice(0, MAX_SOURCES);
+    for (const source of ranked) {
+      lines.push(
+        `[${source.id}] ${source.title || "(untitled)"} — ${source.url}; date=${
+          source.date ?? "unknown"
+        } (${freshnessOf(source, now)}); authority=${
+          source.authority ?? "unknown"
+        }; fetched=${isVerifiedFact(source) ? "yes" : "no"}; kind=${source.kind}`,
+      );
+    }
+    if (sourceCount > MAX_SOURCES) {
+      lines.push(`+${sourceCount - MAX_SOURCES} more sources`);
+    }
+  }
   return lines.join("\n");
 }
 

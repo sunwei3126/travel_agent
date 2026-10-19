@@ -1,5 +1,12 @@
 import { defineDoc } from "@earendil-works/pi-durable";
-import type { DayCard, TripBrief, TripPlan, TripResearch, TripSources } from "@pi-demo/shared";
+import type {
+  DayCard,
+  TripBrief,
+  TripFault,
+  TripPlan,
+  TripResearch,
+  TripSources,
+} from "@pi-demo/shared";
 
 const conversationDoc = {
   scope: "conversation",
@@ -33,6 +40,30 @@ export const TripResearchDoc = defineDoc<TripResearch>({
   kind: "trip.research",
   version: 1,
   initial: () => ({ searchCount: 0, fetchCount: 0 }),
+});
+
+export type SearchCacheEntry = {
+  sourceIds: string[];
+  at: string;
+};
+
+/** Normalized search key -> ids already returned for that query and options. */
+export type SearchCache = Record<string, SearchCacheEntry>;
+
+export const TripSearchCacheDoc = defineDoc<SearchCache>({
+  ...conversationDoc,
+  kind: "trip.search-cache",
+  version: 1,
+  initial: () => ({}),
+});
+
+export type TripFaults = { items: TripFault[] };
+
+export const TripFaultsDoc = defineDoc<TripFaults>({
+  ...conversationDoc,
+  kind: "trip.faults",
+  version: 1,
+  initial: () => ({ items: [] }),
 });
 
 export function mergeBrief(current: TripBrief, patch: Partial<TripBrief>): TripBrief {

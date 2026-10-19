@@ -130,6 +130,91 @@ it("lists trips from the index", async () => {
   await service.close();
 });
 
+it("rejects an impossible calendar date at creation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
+  const env = testEnv();
+  const service = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+  });
+  await expect(
+    service.createTrip({
+      title: "泰山",
+      destination: "泰山",
+      startDate: "2026-02-30",
+      days: 3,
+    }),
+  ).rejects.toThrow("real calendar date");
+  await service.close();
+});
+
+it("records and clears parked task faults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
+  const env = testEnv();
+  const service = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+  });
+  const trip = await service.createTrip({
+    title: "泰山",
+    destination: "泰山",
+    startDate: "2026-10-26",
+    days: 3,
+  });
+
+  await service.recordFault(trip.tripId, {
+    kind: "pi.tool",
+    message: "tool boom",
+    taskId: "7",
+    at: "2026-10-19T00:00:00.000Z",
+  });
+  expect((await service.getSnapshot(trip.tripId)).faults).toEqual([
+    {
+      kind: "pi.tool",
+      message: "tool boom",
+      taskId: "7",
+      at: "2026-10-19T00:00:00.000Z",
+    },
+  ]);
+
+  await service.clearFaults(trip.tripId);
+  expect((await service.getSnapshot(trip.tripId)).faults).toEqual([]);
+  await service.close();
+});
+
+it("stops a quiet event watch when its signal aborts", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
+  const env = testEnv();
+  const service = await TravelService.open({
+    dataDir: dir,
+    models: env.models,
+    registry: env.registry,
+    defaultModel: env.model,
+  });
+  const trip = await service.createTrip({
+    title: "泰山",
+    destination: "泰山",
+    startDate: "2026-10-26",
+    days: 3,
+  });
+
+  const controller = new AbortController();
+  const events = service.watchEvents(trip.tripId, controller.signal)[Symbol.asyncIterator]();
+  const snapshot = await events.next();
+  expect(snapshot.done).toBe(false);
+  expect((snapshot.value as { type: string }).type).toBe("snapshot");
+
+  const pending = events.next();
+  controller.abort();
+  await expect(pending).resolves.toMatchObject({ done: true });
+
+  await service.close();
+});
+
 it("returns the transcript as an array", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-demo-"));
   const env = testEnv();
@@ -210,16 +295,31 @@ describe("tripContextSection", () => {
     await expect(render({})).resolves.toBeUndefined();
   });
 
-  it("renders a compact brief, plan, and source-count summary", async () => {
+  it("renders a compact brief, plan, and source metadata summary", async () => {
     const text = await render({
       brief: { destination: "泰山", startDate: "2026-10-26", days: 3 },
       plan: { days: [card] },
       sources: {
-        s1: { id: "s1", query: "泰山", title: "泰山", url: "https://example.com", snippet: "", kind: "search" },
+        s1: {
+          id: "s1",
+          query: "泰山",
+          title: "泰山景区官网",
+          url: "https://example.com/taishan",
+          snippet: "",
+          date: "2026-09-01",
+          authority: 4,
+          fetchedAt: "2026-10-19T00:00:00.000Z",
+          kind: "fetch",
+        },
       },
     });
     expect(text).toContain("destination=泰山");
     expect(text).toContain("D1 2026-10-26 登山");
     expect(text).toContain("Sources: 1");
+    // The model gets a real read path for source metadata, not just a count.
+    expect(text).toContain("[s1] 泰山景区官网");
+    expect(text).toContain("https://example.com/taishan");
+    expect(text).toContain("authority=4");
+    expect(text).toContain("fetched=yes");
   });
 });

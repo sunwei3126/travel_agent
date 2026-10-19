@@ -3,9 +3,18 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { snapshot, useCoAgentMock } = vi.hoisted((): {
+const {
+  snapshot,
+  useCoAgentMock,
+  useTripSnapshotMock,
+  sendMessageMock,
+  retryMock,
+} = vi.hoisted((): {
   snapshot: TripSnapshot;
   useCoAgentMock: ReturnType<typeof vi.fn>;
+  useTripSnapshotMock: ReturnType<typeof vi.fn>;
+  sendMessageMock: ReturnType<typeof vi.fn>;
+  retryMock: ReturnType<typeof vi.fn>;
 } => {
   const day = (dayIndex: number) => ({
     dayIndex,
@@ -23,6 +32,9 @@ const { snapshot, useCoAgentMock } = vi.hoisted((): {
 
   return {
     useCoAgentMock: vi.fn(),
+    useTripSnapshotMock: vi.fn(),
+    sendMessageMock: vi.fn().mockResolvedValue(undefined),
+    retryMock: vi.fn(),
     snapshot: {
       trip: {
         tripId: "t1",
@@ -56,6 +68,7 @@ const { snapshot, useCoAgentMock } = vi.hoisted((): {
 
 vi.mock("@copilotkit/react-core", () => ({
   useCoAgent: useCoAgentMock,
+  useCopilotChatHeadless_c: () => ({ sendMessage: sendMessageMock }),
   CopilotKit: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -66,15 +79,25 @@ vi.mock("@copilotkit/react-ui", () => ({
 }));
 
 vi.mock("../hooks/useTripSnapshot", () => ({
-  useTripSnapshot: () => ({ snapshot, error: null, loading: false }),
+  useTripSnapshot: useTripSnapshotMock,
 }));
 
+import { fireEvent } from "@testing-library/react";
 import { TripView } from "./TripView";
 
 describe("TripView", () => {
   beforeEach(() => {
     useCoAgentMock.mockReset();
     useCoAgentMock.mockReturnValue({ state: {}, running: false });
+    useTripSnapshotMock.mockReset();
+    useTripSnapshotMock.mockReturnValue({
+      snapshot,
+      error: null,
+      loading: false,
+      retry: retryMock,
+    });
+    sendMessageMock.mockClear();
+    retryMock.mockClear();
   });
 
   it("shows the chat, cards, missing fields, research counts, and budget", () => {
@@ -111,6 +134,96 @@ describe("TripView", () => {
     expect(screen.getByText("实时第一天")).toBeInTheDocument();
     expect(screen.getAllByTestId("day-card")).toHaveLength(1);
     expect(screen.getByText(/搜索 20/)).toBeInTheDocument();
+  });
+
+  it("shows a load error with a retry action", () => {
+    useTripSnapshotMock.mockReturnValue({
+      snapshot: null,
+      error: "network down",
+      loading: false,
+      retry: retryMock,
+    });
+
+    render(<TripView tripId="t1" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("network down");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(retryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the cards and shows a transient refresh error", () => {
+    useTripSnapshotMock.mockReturnValue({
+      snapshot,
+      error: "temporary failure",
+      loading: false,
+      retry: retryMock,
+    });
+
+    render(<TripView tripId="t1" initial={snapshot} />);
+
+    expect(screen.getAllByTestId("day-card")).toHaveLength(3);
+    expect(screen.getByText(/temporary failure/)).toBeInTheDocument();
+  });
+
+  it("sends targeted day actions through the chat", () => {
+    render(<TripView tripId="t1" initial={snapshot} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "改这一天" })[0]);
+
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageMock.mock.calls[0][0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("第 1 天"),
+    });
+  });
+
+  it("offers a redraw action for a failed sketch", () => {
+    useTripSnapshotMock.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        plan: {
+          ...snapshot.plan,
+          days: [
+            { ...snapshot.plan.days[0], svg: undefined, svgStatus: "failed" },
+            snapshot.plan.days[1],
+            snapshot.plan.days[2],
+          ],
+        },
+      },
+      error: null,
+      loading: false,
+      retry: retryMock,
+    });
+
+    render(<TripView tripId="t1" initial={snapshot} />);
+    fireEvent.click(screen.getByRole("button", { name: "重画" }));
+
+    expect(sendMessageMock.mock.calls[0][0].content).toContain("第 1 天");
+  });
+
+  it("surfaces a parked task fault and retries it", () => {
+    useTripSnapshotMock.mockReturnValue({
+      snapshot: {
+        ...snapshot,
+        faults: [
+          {
+            kind: "pi.tool",
+            message: "工具超时",
+            at: "2026-10-19T00:00:00.000Z",
+          },
+        ],
+      },
+      error: null,
+      loading: false,
+      retry: retryMock,
+    });
+
+    render(<TripView tripId="t1" initial={snapshot} />);
+
+    expect(screen.getByTestId("trip-fault")).toHaveTextContent("工具任务已暂停");
+    expect(screen.getByTestId("trip-fault")).toHaveTextContent("工具超时");
+    fireEvent.click(screen.getByRole("button", { name: "重试任务" }));
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the durable state when live day cards are older", () => {

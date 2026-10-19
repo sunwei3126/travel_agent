@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { DayCard, svgDataUrl } from "./DayCard";
 
 const card = {
@@ -52,6 +52,45 @@ describe("DayCard", () => {
     );
 
     expect(screen.getByText("未核实")).toBeInTheDocument();
+  });
+
+  it("renders source chips as title links", () => {
+    render(
+      <DayCard
+        card={{ ...card, sources: ["s1", "missing"] }}
+        sources={{
+          s1: {
+            id: "s1",
+            query: "泰山",
+            title: "泰山景区官网",
+            url: "https://example.com/taishan",
+            snippet: "",
+            kind: "search",
+          },
+        }}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "泰山景区官网" });
+    expect(link).toHaveAttribute("href", "https://example.com/taishan");
+    expect(screen.getByText("missing")).toBeInTheDocument();
+  });
+
+  it("calls the redraw and edit actions with the day index", () => {
+    const onRedraw = vi.fn();
+    const onEditDay = vi.fn();
+    render(
+      <DayCard
+        card={{ ...card, svg: undefined, svgStatus: "failed" }}
+        onRedraw={onRedraw}
+        onEditDay={onEditDay}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重画" }));
+    fireEvent.click(screen.getByRole("button", { name: "改这一天" }));
+    expect(onRedraw).toHaveBeenCalledWith(1);
+    expect(onEditDay).toHaveBeenCalledWith(1);
   });
 
   it("encodes an SVG with a Chinese title as UTF-8", () => {

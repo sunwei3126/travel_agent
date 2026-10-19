@@ -33,11 +33,15 @@ type MessageState = {
   emitted: string;
   /** Text already sent for each assistant-message content index. */
   blocks: Map<number, string>;
+  /** Whether `TEXT_MESSAGE_START` was emitted and `TEXT_MESSAGE_END` is still due. */
+  open: boolean;
 };
 
 type MapperState = {
   current: MessageState | undefined;
   sequence: number;
+  /** Tool calls started in this run whose `TOOL_CALL_END` is still due. */
+  activeTools: Set<string>;
 };
 
 const asRecord = (value: unknown): UnknownRecord | undefined =>
@@ -51,7 +55,7 @@ const asId = (value: unknown): string | undefined =>
 
 /** Creates the per-run state needed for message ids and text already emitted. */
 export function createPiEventMapper(): PiEventMapper {
-  const state: MapperState = { current: undefined, sequence: 0 };
+  const state: MapperState = { current: undefined, sequence: 0, activeTools: new Set() };
   return { map: (batch) => mapBatch(state, batch) };
 }
 
@@ -104,8 +108,17 @@ function toAguiMessage(entry: TranscriptEntry): AguiMessage {
 
 function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]): void {
   switch (event.type) {
-    case "snapshot":
+    case "snapshot": {
+      // Late attach: the durable snapshot may already carry an in-flight
+      // generation partial. Seed it so later deltas are never content without
+      // a preceding TEXT_MESSAGE_START.
+      const generation = asRecord(event.generation);
+      const message = asRecord(generation?.message);
+      if (message?.role !== "assistant") return;
+      const target = state.current ?? newMessage(state, undefined);
+      appendMessageText(target, message.content, out);
       return;
+    }
 
     case "message_start":
     case "text_start": {
@@ -115,7 +128,7 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
         return;
       }
       const message = newMessage(state, explicitId);
-      out.push({ type: EventType.TEXT_MESSAGE_START, messageId: message.id });
+      startMessage(message, out);
       if (source?.role === "assistant") appendMessageText(message, source.content, out);
       return;
     }
@@ -162,7 +175,9 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
       ) {
         const message = ensureMessage(state, event);
         if (assistant) appendMessageText(message, source!.content, out);
+        startMessage(message, out);
         out.push({ type: EventType.TEXT_MESSAGE_END, messageId: message.id });
+        message.open = false;
         state.current = undefined;
       }
       return;
@@ -173,6 +188,13 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
       const toolCallName = asText(event.toolName);
       if (toolCallId !== undefined && toolCallName !== undefined) {
         out.push({ type: EventType.TOOL_CALL_START, toolCallId, toolCallName });
+        // AG-UI tracks a call as active from START; ARGS and END close it.
+        out.push({
+          type: EventType.TOOL_CALL_ARGS,
+          toolCallId,
+          delta: JSON.stringify(event.args ?? {}),
+        });
+        state.activeTools.add(toolCallId);
       }
       return;
     }
@@ -180,6 +202,12 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
     case "tool_execution_end": {
       const toolCallId = asText(event.toolCallId);
       if (toolCallId === undefined) return;
+      // A result seen without a start (late attach) is left as RESULT only;
+      // emitting END without an active call would fail protocol validation.
+      if (state.activeTools.has(toolCallId)) {
+        out.push({ type: EventType.TOOL_CALL_END, toolCallId });
+        state.activeTools.delete(toolCallId);
+      }
       out.push({
         type: EventType.TOOL_CALL_RESULT,
         messageId: toolResultMessageId(event, toolCallId),
@@ -191,13 +219,30 @@ function mapPiEvent(state: MapperState, event: UnknownRecord, out: AGUIEvent[]):
 
     case "task_failed": {
       const code = asText(event.kind);
-      // A generation task owns the run; a failed tool task does not end it.
+      const message = asText(event.message) ?? "Task failed";
+      // Surface every parked/faulted task distinctly to the UI. A generation
+      // task owns the run, so its fault also ends the run; a failed tool task
+      // does not end the run, and the model may retry the tool.
+      out.push({
+        type: EventType.CUSTOM,
+        name: "travel.task_failed",
+        value: {
+          kind: code ?? "unknown",
+          message,
+          ...(asId(event.taskId) === undefined ? {} : { taskId: asId(event.taskId) }),
+        },
+      });
       if (code !== undefined && code !== "pi.generation") return;
       out.push({
         type: EventType.RUN_ERROR,
-        message: asText(event.message) ?? "Task failed",
+        message,
         ...(code === undefined ? {} : { code }),
       });
+      return;
+    }
+
+    case "run_end": {
+      closeOpenEntities(state, out);
       return;
     }
 
@@ -220,9 +265,30 @@ function newMessage(state: MapperState, explicitId: string | undefined): Message
     id: explicitId ?? `assistant-${state.sequence}`,
     emitted: "",
     blocks: new Map(),
+    open: false,
   };
   state.current = message;
   return message;
+}
+
+/** Emits TEXT_MESSAGE_START once, before any content or end for a message. */
+function startMessage(message: MessageState, out: AGUIEvent[]): void {
+  if (message.open) return;
+  message.open = true;
+  out.push({ type: EventType.TEXT_MESSAGE_START, messageId: message.id });
+}
+
+/** Closes entities left open when a run ends, so RUN_FINISHED can be accepted. */
+function closeOpenEntities(state: MapperState, out: AGUIEvent[]): void {
+  if (state.current?.open === true) {
+    out.push({ type: EventType.TEXT_MESSAGE_END, messageId: state.current.id });
+    state.current.open = false;
+  }
+  for (const toolCallId of state.activeTools) {
+    out.push({ type: EventType.TOOL_CALL_END, toolCallId });
+  }
+  state.activeTools.clear();
+  state.current = undefined;
 }
 
 function ensureMessage(state: MapperState, event: UnknownRecord): MessageState {
@@ -273,12 +339,14 @@ function appendSuffix(message: MessageState, fullText: string, out: AGUIEvent[])
   if (fullText.length <= message.emitted.length) return;
   const delta = fullText.slice(message.emitted.length);
   message.emitted = fullText;
+  startMessage(message, out);
   out.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: message.id, delta });
 }
 
 function appendText(message: MessageState, delta: string, out: AGUIEvent[]): void {
   if (delta.length === 0) return;
   message.emitted += delta;
+  startMessage(message, out);
   out.push({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: message.id, delta });
 }
 

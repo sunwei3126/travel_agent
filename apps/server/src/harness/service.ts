@@ -16,6 +16,8 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type {
   TranscriptEntry,
+  TripBrief,
+  TripFault,
   TripIndexEntry,
   TripPlan,
   TripResearch,
@@ -23,7 +25,14 @@ import type {
 } from "@pi-demo/shared";
 import { PLANNER_INSTRUCTIONS } from "../agent/prompts";
 import { tripContextSection } from "../agent/section";
-import { TripBriefDoc, TripPlanDoc, TripResearchDoc, TripSourcesDoc } from "../trips/docs";
+import { validateBrief } from "../plan/validate";
+import {
+  TripBriefDoc,
+  TripFaultsDoc,
+  TripPlanDoc,
+  TripResearchDoc,
+  TripSourcesDoc,
+} from "../trips/docs";
 import { TripIndexStore } from "../trips/index-store";
 
 /** One event from the pi-durable conversation event stream. */
@@ -90,6 +99,18 @@ export class TravelService {
   }
 
   async createTrip(input: CreateTripInput): Promise<TripIndexEntry> {
+    // Creation only records the seed fields, so completeness is not required
+    // yet; an impossible or past calendar date is still rejected here.
+    const initialBrief: TripBrief = {
+      destination: input.destination,
+      startDate: input.startDate,
+      days: input.days,
+    };
+    const errors = validateBrief(initialBrief, this.now(), { requireComplete: false });
+    if (errors.length > 0) {
+      throw new Error(`Invalid trip: ${errors.join("; ")}`);
+    }
+
     const conversation = await this.harness.createConversation(
       {
         ownership: { kind: "ownerless" },
@@ -144,6 +165,9 @@ export class TravelService {
     const sources = (await this.harness.snapshot(TripSourcesDoc, conversationId, this.context)) ?? {};
     const research =
       (await this.harness.snapshot(TripResearchDoc, conversationId, this.context)) ?? EMPTY_RESEARCH;
+    const faults = (
+      await this.harness.snapshot(TripFaultsDoc, conversationId, this.context)
+    )?.items ?? [];
     const live = await this.harness.snapshot(LiveDoc, conversationId, this.context);
 
     return {
@@ -153,7 +177,24 @@ export class TravelService {
       sources,
       research,
       running: live?.run !== undefined,
+      faults,
     };
+  }
+
+  async recordFault(tripId: string, fault: TripFault): Promise<void> {
+    const conversation = await this.requireConversationById(tripId);
+    await conversation.commit(async (tx) => {
+      const faults = await tx.doc(TripFaultsDoc, conversation.id);
+      faults.items = [...faults.items, fault].slice(-10);
+    }, this.context);
+  }
+
+  async clearFaults(tripId: string): Promise<void> {
+    const conversation = await this.requireConversationById(tripId);
+    await conversation.commit(async (tx) => {
+      const faults = await tx.doc(TripFaultsDoc, conversation.id);
+      faults.items = [];
+    }, this.context);
   }
 
   async submitMessage(
@@ -193,15 +234,18 @@ export class TravelService {
     }
   }
 
-  watchEvents(tripId: string): AsyncIterable<PiEvent> {
-    return this.streamEvents(tripId);
+  watchEvents(tripId: string, signal?: AbortSignal): AsyncIterable<PiEvent> {
+    return this.streamEvents(tripId, signal);
   }
 
   async close(): Promise<void> {
     await this.harness.close(this.context);
   }
 
-  private async *streamEvents(tripId: string): AsyncGenerator<PiEvent> {
+  private async *streamEvents(
+    tripId: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<PiEvent> {
     const trip = await this.requireTrip(tripId);
     const stream = await watchConversationEvents(
       this.harness,
@@ -212,6 +256,13 @@ export class TravelService {
     const pending: PiEvent[] = [];
     let wake: (() => void) | undefined;
     let closed = false;
+    let aborted = signal?.aborted ?? false;
+    const onAbort = (): void => {
+      aborted = true;
+      wake?.();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+
     stream.start(async (events) => {
       pending.push(...events);
       wake?.();
@@ -224,6 +275,7 @@ export class TravelService {
     try {
       yield stream.snapshot;
       while (true) {
+        if (aborted) return;
         const next = pending.shift();
         if (next !== undefined) {
           yield next;
@@ -232,10 +284,13 @@ export class TravelService {
         if (closed) return;
         await new Promise<void>((resolve) => {
           wake = resolve;
+          // The abort may have landed between the check above and this assignment.
+          if (aborted) resolve();
         });
         wake = undefined;
       }
     } finally {
+      signal?.removeEventListener("abort", onAbort);
       await stream.stop();
     }
   }

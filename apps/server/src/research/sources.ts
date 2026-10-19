@@ -3,7 +3,35 @@ import type { TripSource, TripSources } from "@pi-demo/shared";
 import type { FetchResult, SearchHit } from "../deepseek/client";
 
 export function sourceIdForUrl(url: string): string {
-  return createHash("sha256").update(url).digest("hex").slice(0, 12);
+  return createHash("sha256").update(normalizeUrl(url)).digest("hex").slice(0, 12);
+}
+
+/**
+ * Normalizes a URL for cache identity: trims, lower-cases the scheme and host,
+ * drops the fragment, and removes a trailing slash. Invalid URLs are returned
+ * trimmed so callers can still compare exact strings.
+ */
+export function normalizeUrl(value: string): string {
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    url.hash = "";
+    const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
+    return `${url.protocol.toLowerCase()}//${url.host.toLowerCase()}${pathname}${url.search}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+/** Finds a stored source by normalized URL, regardless of how it was added. */
+export function findSourceByUrl(
+  sources: TripSources,
+  url: string,
+): TripSource | undefined {
+  const normalized = normalizeUrl(url);
+  return Object.values(sources).find(
+    (source) => normalizeUrl(source.url) === normalized,
+  );
 }
 
 const highest = (a: number | undefined, b: number | undefined): number | undefined => {

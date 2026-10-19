@@ -121,6 +121,7 @@ async function main(): Promise<void> {
   );
 
   let factCount = 0;
+  let verifiedFactCount = 0;
   for (const day of snapshot.plan.days) {
     assert(
       day.svgStatus === "ok" || day.svgStatus === "failed",
@@ -134,18 +135,40 @@ async function main(): Promise<void> {
         claim.sourceIds.length > 0 || claim.unverified === true,
         `day ${day.dayIndex} fact claim is neither sourced nor unverified: ${claim.text}`,
       );
+      if (
+        claim.unverified !== true &&
+        claim.sourceIds.some((id) => snapshot.sources[id]?.fetchedAt !== undefined)
+      ) {
+        verifiedFactCount += 1;
+      }
     }
   }
 
   assert(factCount > 0, "plan contains no fact claims");
+  assert(
+    verifiedFactCount > 0,
+    "no fact claim is backed by a fetched source; snippets alone are unverified leads",
+  );
+  assert(
+    snapshot.research.fetchCount > 0,
+    "no pages were fetched; hard facts cannot have been verified",
+  );
 
   const budget = snapshot.plan.budget;
   assert(budget !== undefined, "plan.budget is missing");
+  assert(
+    budget.withinBudget === true,
+    `plan is over budget: ¥${budget.high} > ¥${budget.cap}`,
+  );
+  assert(
+    budget.high <= 3000,
+    `budget upper bound ¥${budget.high} exceeds the ¥3000 acceptance cap`,
+  );
 
   console.log(
     [
       `Trip ${trip.tripId}: ${snapshot.plan.days.length} day cards`,
-      `${factCount} sourced/unverified facts`,
+      `${factCount} facts (${verifiedFactCount} verified from fetched pages)`,
       `budget ¥${budget.low}–¥${budget.high} / ¥${budget.cap}`,
       `research ${snapshot.research.searchCount} searches, ${snapshot.research.fetchCount} fetches`,
     ].join("; "),

@@ -5,7 +5,7 @@ import { createFetchTool } from "./tools/fetch";
 import { finalizeTool } from "./tools/finalize";
 import { createSearchTool } from "./tools/search";
 import { createSketchDayTool } from "./tools/sketch-day";
-import { updateBriefTool } from "./tools/update-brief";
+import { createUpdateBriefTool } from "./tools/update-brief";
 
 export type { TravelDeps } from "./deps";
 
@@ -13,7 +13,7 @@ export function createTravelExtension(deps: TravelDeps): Extension {
   return defineExtension({
     name: "travel",
     tools: [
-      updateBriefTool,
+      createUpdateBriefTool(deps),
       createEmitDayTool(deps),
       finalizeTool,
       createSearchTool(deps),

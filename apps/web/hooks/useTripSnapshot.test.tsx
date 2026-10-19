@@ -94,6 +94,53 @@ describe("useTripSnapshot", () => {
     expect(result.current.snapshot?.running).toBe(false);
   });
 
+  it("shows an error and resumes polling after a transient failure", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useTripSnapshot("t1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.error).toContain("network down");
+    expect(result.current.snapshot).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.snapshot).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries immediately when the retry action is called", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(jsonResponse({ ...snapshot, running: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useTripSnapshot("t1"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.error).toContain("network down");
+
+    await act(async () => {
+      result.current.retry();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.error).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not fetch again after unmount", async () => {
     vi.useFakeTimers();
     const fetchMock = vi

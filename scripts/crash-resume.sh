@@ -63,6 +63,27 @@ json_get() {
   ' "$1"
 }
 
+# Emits the selected value as JSON (objects stay objects, unlike json_get).
+json_get_json() {
+  node -e '
+    let data = "";
+    process.stdin.on("data", (chunk) => (data += chunk));
+    process.stdin.on("end", () => {
+      let value;
+      try {
+        value = JSON.parse(data);
+      } catch {
+        process.exit(2);
+      }
+      for (const key of process.argv[1].split(".")) {
+        if (value === null || value === undefined) break;
+        value = value[key];
+      }
+      process.stdout.write(JSON.stringify(value ?? {}));
+    });
+  ' "$1"
+}
+
 api_get() {
   curl -fsS --max-time 10 "$API_URL$1"
 }
@@ -187,6 +208,16 @@ fi
 read -r before_search before_fetch <<<"$research_counts"
 log "research started: searchCount=$before_search fetchCount=$before_fetch"
 
+# Attempts are recorded only when a result commits, so every key below names a
+# completed (cached) call. A replay after restart must not increment it.
+before_body=$(api_get "/api/trips/$TRIP_ID") || fail "could not read the pre-kill snapshot"
+before_search_attempts=$(printf '%s' "$before_body" | json_get_json research.searchAttempts)
+before_fetch_attempts=$(printf '%s' "$before_body" | json_get_json research.fetchAttempts)
+
+if [ "$before_search_attempts" = "{}" ] && [ "$before_fetch_attempts" = "{}" ]; then
+  fail "no completed search/fetch attempt was recorded before the kill"
+fi
+
 log "killing server with SIGKILL"
 kill -9 "$SERVER_PID" 2>/dev/null || true
 wait "$SERVER_PID" 2>/dev/null || true
@@ -203,11 +234,39 @@ final_running=$(printf '%s' "$final" | json_get running)
 final_days=$(printf '%s' "$final" | json_get plan.days.length)
 final_budget=$(printf '%s' "$final" | json_get plan.budget.cap)
 final_search=$(printf '%s' "$final" | json_get research.searchCount)
+final_fetch=$(printf '%s' "$final" | json_get research.fetchCount)
+final_within=$(printf '%s' "$final" | json_get plan.budget.withinBudget)
+after_search_attempts=$(printf '%s' "$final" | json_get_json research.searchAttempts)
+after_fetch_attempts=$(printf '%s' "$final" | json_get_json research.fetchAttempts)
 
 [ "$final_running" = "false" ] || fail "run is still running after restart"
 [ "$final_days" = "3" ] || fail "expected 3 day cards, got ${final_days:-0}"
 [ -n "$final_budget" ] || fail "plan.budget is missing"
+[ "$final_within" = "true" ] || fail "plan is over budget after restart"
 [ "${final_search:-0}" -le "$MAX_SEARCHES" ] ||
   fail "searchCount $final_search exceeded the cap of $MAX_SEARCHES"
+[ "${final_fetch:-0}" -gt 0 ] || fail "no page was fetched, so no hard fact was verified"
 
-log "PASS: resumed run completed with searchCount=$final_search (before kill: $before_search), budget cap ¥$final_budget"
+# Every attempt present before the kill had committed its result. A replay of
+# that call must hit the cache, so its attempt count may not grow.
+BEFORE_SEARCH="$before_search_attempts" \
+BEFORE_FETCH="$before_fetch_attempts" \
+AFTER_SEARCH="$after_search_attempts" \
+AFTER_FETCH="$after_fetch_attempts" \
+node -e '
+  const parse = (value) => {
+    try { return JSON.parse(value || "{}"); } catch { return {}; }
+  };
+  const check = (label, before, after) => {
+    for (const [key, count] of Object.entries(before)) {
+      if ((after[key] ?? 0) !== count) {
+        console.error(`FAIL: completed ${label} call was repeated after restart: ${key}`);
+        process.exit(1);
+      }
+    }
+  };
+  check("search", parse(process.env.BEFORE_SEARCH), parse(process.env.AFTER_SEARCH));
+  check("fetch", parse(process.env.BEFORE_FETCH), parse(process.env.AFTER_FETCH));
+' || fail "completed research calls were repeated after restart"
+
+log "PASS: resumed run completed with searchCount=$final_search (before kill: $before_search), fetchCount=$final_fetch; completed attempts were not repeated; budget cap ¥$final_budget"
