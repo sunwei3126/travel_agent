@@ -203,6 +203,30 @@ describe("deepseek_search", () => {
     expect(store.research.fetchCount).toBe(30);
   });
 
+  it("stores a fetch result that only contains content under the searched URL", async () => {
+    const search = vi.fn(async () => [hits3[1]]);
+    const fetch = vi.fn(async () => ({ content: "正文" }) as never);
+    const store = docs();
+
+    const result = await searchTool({ search, fetch } as unknown as DeepSeekClient).execute(
+      { query: "泰山 门票" },
+      fakeApi(store) as never,
+      {} as never,
+    );
+
+    const id = sourceIdForUrl(hits3[1].url);
+    expect(store.research.fetchCount).toBe(1);
+    expect(store.sources[id]).toMatchObject({
+      url: hits3[1].url,
+      title: hits3[1].url,
+      content: "正文",
+    });
+    expect(store.sources[id].fetchedAt).toBeTruthy();
+    const text = (result.output as Array<{ text: string }>)[0].text;
+    expect(text).toContain(`[${id}]`);
+    expect(text).toContain("fetchedContent: 正文");
+  });
+
   it("keeps the search successful when one auto-fetch fails", async () => {
     const twoHits = [hits3[1], hits3[0]];
     const search = vi.fn(async () => twoHits);
@@ -211,6 +235,7 @@ describe("deepseek_search", () => {
       return fetchResult(url);
     });
     const store = docs();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await searchTool({ search, fetch } as unknown as DeepSeekClient).execute(
       { query: "泰山 门票" },
@@ -220,6 +245,10 @@ describe("deepseek_search", () => {
 
     expect(store.research.searchCount).toBe(1);
     expect(store.research.fetchCount).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining(hits3[1].url),
+    );
+    errorSpy.mockRestore();
     const text = (result.output as Array<{ text: string }>)[0].text;
 
     const failedId = sourceIdForUrl(hits3[1].url);

@@ -5,7 +5,7 @@ import {
 import { Type } from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/chord/context";
 import type { TripSource, TripSources } from "@pi-demo/shared";
-import type { SearchOptions } from "../../deepseek/client";
+import type { FetchResult, SearchOptions } from "../../deepseek/client";
 import { formatSearchResults } from "../../research/format";
 import {
   addFetchToSource,
@@ -106,7 +106,19 @@ async function autoFetch(
 
   for (const target of targets) {
     try {
-      const result = await deps.deepseek.fetch(target.url);
+      const raw = await deps.deepseek.fetch(target.url);
+      // Older/alternate response shapes may omit title/url. Keep the requested
+      // URL as the identity instead of failing the whole search.
+      const result: FetchResult = {
+        content: typeof raw.content === "string" ? raw.content : "",
+        url: typeof raw.url === "string" && raw.url.length > 0 ? raw.url : target.url,
+        title:
+          typeof raw.title === "string" && raw.title.length > 0
+            ? raw.title
+            : typeof raw.url === "string" && raw.url.length > 0
+              ? raw.url
+              : target.url,
+      };
       const source = await api.commit(async (tx) => {
         const research = await tx.doc(TripResearchDoc, api.conversationId);
         // A concurrent call may have reached the cap while this request ran.
@@ -122,8 +134,14 @@ async function autoFetch(
         return { ...stored[id] };
       }, context);
       if (source !== undefined) fetched.push(source);
-    } catch {
-      // The snippet remains a lead; the search itself still succeeds.
+    } catch (error) {
+      // The snippet remains a lead; the search itself still succeeds, but the
+      // failure is logged instead of disappearing silently.
+      console.error(
+        `[deepseek_search] auto-fetch failed for ${target.url}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

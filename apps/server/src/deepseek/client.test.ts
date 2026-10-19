@@ -14,6 +14,39 @@ it("posts a search with bearer auth and maps results", async () => {
   expect(hits[0]).toMatchObject({ title: "泰山门票", authority: 4, rerankScore: 2.1 });
 });
 
+it("normalizes a live fetch response that only contains content", async () => {
+  const fetchImpl = vi.fn(async () =>
+    new Response(JSON.stringify({ content: "正文" }), { status: 200 }),
+  );
+  const client = new DeepSeekClient({ apiKey: "k", fetchImpl });
+
+  await expect(client.fetch("https://example.com/page")).resolves.toEqual({
+    url: "https://example.com/page",
+    title: "https://example.com/page",
+    content: "正文",
+  });
+});
+
+it("keeps title and url when the fetch response provides them", async () => {
+  const fetchImpl = vi.fn(async () =>
+    new Response(
+      JSON.stringify({
+        title: "页面标题",
+        url: "https://example.com/final",
+        content: "正文",
+      }),
+      { status: 200 },
+    ),
+  );
+  const client = new DeepSeekClient({ apiKey: "k", fetchImpl });
+
+  await expect(client.fetch("https://example.com/page")).resolves.toEqual({
+    url: "https://example.com/final",
+    title: "页面标题",
+    content: "正文",
+  });
+});
+
 it("returns an empty list when DeepSeek has no results", async () => {
   const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ results: [] }), { status: 200 }));
   expect(await new DeepSeekClient({ apiKey: "k", fetchImpl }).search("不存在的地方")).toEqual([]);

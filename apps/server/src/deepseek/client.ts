@@ -101,7 +101,25 @@ export class DeepSeekClient {
   }
 
   async fetch(url: string): Promise<FetchResult> {
-    return this.post<FetchResult>("/v1/tools/fetch", { url }, this.fetchLimiter);
+    // The live endpoint returns only `{ content }`; other deployments also send
+    // title/url. Normalize both shapes so callers always get a complete result.
+    const raw =
+      (await this.post<{
+        title?: unknown;
+        url?: unknown;
+        content?: unknown;
+      }>("/v1/tools/fetch", { url }, this.fetchLimiter)) ?? {};
+
+    const returnedUrl =
+      typeof raw.url === "string" && raw.url.length > 0 ? raw.url : url;
+    return {
+      content: typeof raw.content === "string" ? raw.content : "",
+      url: returnedUrl,
+      title:
+        typeof raw.title === "string" && raw.title.length > 0
+          ? raw.title
+          : returnedUrl,
+    };
   }
 
   private async post<T>(path: string, body: unknown, limiter: RateLimiter): Promise<T> {
