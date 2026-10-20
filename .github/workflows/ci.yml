@@ -59,7 +59,7 @@ jobs:
         run: npm test
 
       - name: Restore Next build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/web/.next/cache
           key: ${{ runner.os }}-next-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/web/**/*.ts', 'apps/web/**/*.tsx', 'apps/web/**/*.css', 'packages/shared/**/*.ts') }}
