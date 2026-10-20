@@ -238,6 +238,24 @@ describe("ChatPanel", () => {
     expect(getTranscript).toHaveBeenCalledTimes(2);
   });
 
+  it("loads history past an empty assistant placeholder", async () => {
+    const { setMessages } = setup({
+      messages: [{ id: "a0", role: "assistant", content: "" }],
+    });
+    vi.mocked(getTranscript).mockResolvedValueOnce(messages);
+    render(<ChatPanel tripId="t1" />);
+
+    await waitFor(() => {
+      expect(setMessages).toHaveBeenCalledWith(messages);
+    });
+  });
+
+  it("keeps a live conversation instead of replacing it with history", () => {
+    setup({ messages: [{ id: "u0", role: "user", content: "在" }] });
+    render(<ChatPanel tripId="t1" />);
+    expect(getTranscript).not.toHaveBeenCalled();
+  });
+
   it("loads history when the chat starts empty", async () => {
     const { setMessages } = setup({ messages: [] });
     vi.mocked(getTranscript).mockResolvedValueOnce(messages);

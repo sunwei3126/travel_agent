@@ -1,5 +1,6 @@
 "use client";
 
+import { contentToText, type Message } from "@ag-ui/core";
 import { useCopilotChatInternal } from "@copilotkit/react-core";
 import { useDefaultRenderTool } from "@copilotkit/react-core/v2";
 import {
@@ -15,6 +16,23 @@ import {
   type ToolProgress,
 } from "../../lib/chat";
 import { ChatMessages } from "./ChatMessages";
+
+/** Whether the runtime already holds visible conversation content. */
+function hasRenderableHistory(messages: readonly Message[]): boolean {
+  return messages.some((message) => {
+    if (message.role === "user") {
+      return contentToText(message.content).trim().length > 0;
+    }
+    if (message.role === "reasoning") return message.content.length > 0;
+    if (message.role === "assistant") {
+      return (
+        (message.content?.length ?? 0) > 0 ||
+        (message.toolCalls?.length ?? 0) > 0
+      );
+    }
+    return message.role === "tool";
+  });
+}
 
 export function ChatPanel({ tripId }: { tripId: string }) {
   // CopilotKit's own message views render tool calls too; give them a
@@ -42,9 +60,9 @@ export function ChatPanel({ tripId }: { tripId: string }) {
 
   useEffect(() => {
     if (!isAvailable || historyLoaded.current) return;
-    // A live conversation may already be in memory when the runtime becomes
-    // available; do not replace it with committed history.
-    if (messages.length > 0) return;
+    // The runtime may already hold visible messages (for example after a run
+    // started before the panel mounted); do not replace that live state.
+    if (hasRenderableHistory(messages)) return;
     historyLoaded.current = true;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
