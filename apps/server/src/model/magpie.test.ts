@@ -24,14 +24,14 @@ it("supports a remote Anthropic-compatible endpoint with its own key", () => {
   const env = {
     MAGPIE_BASE_URL: "https://api.deepseek.com/anthropic",
     MAGPIE_MODEL: "deepseek-chat",
-    MAGPIE_API_KEY: "sk-remote",
+    MAGPIE_API_KEY: "test-key",
     MAGPIE_MAX_TOKENS: "8192",
   };
   const models = createMagpieModels(env);
   const model = resolveMagpieModel(models, env);
   expect(model.baseUrl).toBe("https://api.deepseek.com/anthropic");
   expect(model.id).toBe("deepseek-chat");
-  expect(model.headers?.["x-api-key"]).toBe("sk-remote");
+  expect(model.headers?.["x-api-key"]).toBe("test-key");
   expect(model.maxTokens).toBe(8192);
 });
 
