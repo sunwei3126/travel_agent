@@ -70,7 +70,7 @@
 - Node.js 22.22.1（pi-durable 要求 ≥22.19.0）。
 - pi-durable `@earendil-works/pi-durable` 1.3.0，实验性，API 可能随版本变化。
 - 持久化用 SQLite 单文件；同一时间只能有一个进程打开。
-- 模型走本机 magpie 网关 `http://127.0.0.1:3425`，Anthropic Messages 格式。
+- 模型默认走本机 magpie 网关 `http://127.0.0.1:3425`（Anthropic Messages 格式）；可用 `MAGPIE_*` 指向任意兼容端点。
 - 搜索走 DeepSeek 官方 Search/Fetch API：
   - `POST https://api.deepseek.com/v1/tools/search`
   - `POST https://api.deepseek.com/v1/tools/fetch`

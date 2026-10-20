@@ -99,7 +99,7 @@ walkthrough of the request lifecycle and failure modes.
 
 Use Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`). Keep commits
 focused. Do not commit generated files (`apps/web/next-env.d.ts`,
-`apps/web/AGENTS.md`, `.next/`, `data/`, `.superpowers/`); they are ignored.
+`apps/web/AGENTS.md`, `.next/`, `data/`); they are ignored.
 
 ## Pull requests
 
