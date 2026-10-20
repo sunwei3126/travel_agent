@@ -5,5 +5,15 @@ data/
 .superpowers/
 *.log
 .env
-.env.local
+.env.*
+!.env.example
 *.tsbuildinfo
+*.sqlite
+*.sqlite-*
+apps/web/next-env.d.ts
+apps/web/AGENTS.md
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db
