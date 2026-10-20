@@ -46,8 +46,13 @@ The server reads these optional environment variables:
 
 - `PORT` – API port (default `4000`)
 - `DATA_DIR` – durable SQLite/doc directory (default `./data`)
-- `MAGPIE_BASE_URL` – magpie gateway (default `http://127.0.0.1:3425`)
+- `MAGPIE_BASE_URL` – magpie gateway or any Anthropic-compatible endpoint
+  (default `http://127.0.0.1:3425`)
 - `MAGPIE_MODEL` – model id (default `deepseek/deepseek-flash`)
+- `MAGPIE_API_KEY` – credential sent as `x-api-key` (default `magpie`; set the
+  real key when `MAGPIE_BASE_URL` points at a remote endpoint)
+- `MAGPIE_MAX_TOKENS` – maximum output tokens advertised to the provider
+  (default `393216`; lower it for providers with a smaller output limit)
 - `PI_THINKING_LEVEL` – thinking level for the model (default `low`; use `off`
   to disable). Thinking appears in the chat when magpie returns thinking blocks.
 - `DEEPSEEK_BASE_URL` – DeepSeek research API base URL

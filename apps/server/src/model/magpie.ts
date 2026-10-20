@@ -10,7 +10,12 @@ import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messag
 const DEFAULT_BASE_URL = "http://127.0.0.1:3425";
 const DEFAULT_MODEL_ID = "deepseek/deepseek-flash";
 
-function magpieModel(baseUrl: string, modelId: string): Model<"anthropic-messages"> {
+function magpieModel(
+  baseUrl: string,
+  modelId: string,
+  apiKey: string,
+  maxTokens: number,
+): Model<"anthropic-messages"> {
   return {
     id: modelId,
     name: modelId,
@@ -18,12 +23,13 @@ function magpieModel(baseUrl: string, modelId: string): Model<"anthropic-message
     provider: "magpie",
     baseUrl,
     reasoning: true,
-    // pi-ai's Anthropic API requires a non-empty credential; magpie accepts any local key.
-    headers: { "x-api-key": "magpie" },
+    // Magpie accepts any local key; a remote Anthropic-compatible endpoint
+    // (for example DeepSeek's /anthropic API) needs the real key here.
+    headers: { "x-api-key": apiKey },
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 1000000,
-    maxTokens: 393216,
+    maxTokens,
   };
 }
 
@@ -31,6 +37,12 @@ function magpieModel(baseUrl: string, modelId: string): Model<"anthropic-message
 export function createMagpieModels(env: NodeJS.ProcessEnv = process.env): Models {
   const baseUrl = env.MAGPIE_BASE_URL ?? DEFAULT_BASE_URL;
   const modelId = env.MAGPIE_MODEL ?? DEFAULT_MODEL_ID;
+  const apiKey = env.MAGPIE_API_KEY ?? "magpie";
+  const configuredMaxTokens = Number(env.MAGPIE_MAX_TOKENS ?? 393216);
+  const maxTokens =
+    Number.isFinite(configuredMaxTokens) && configuredMaxTokens > 0
+      ? configuredMaxTokens
+      : 393216;
 
   const provider = createProvider({
     id: "magpie",
@@ -38,7 +50,7 @@ export function createMagpieModels(env: NodeJS.ProcessEnv = process.env): Models
     baseUrl,
     // Magpie accepts any local key; an empty auth is enough to mark the provider configured.
     auth: { apiKey: { name: "Magpie", resolve: async () => ({ auth: {} }) } },
-    models: [magpieModel(baseUrl, modelId)],
+    models: [magpieModel(baseUrl, modelId, apiKey, maxTokens)],
     api: anthropicMessagesApi(),
   });
 

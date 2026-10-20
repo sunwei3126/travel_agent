@@ -20,6 +20,21 @@ it("resolves a non-empty credential for the magpie model", async () => {
   expect(auth?.auth.headers?.["x-api-key"]).toBe("magpie");
 });
 
+it("supports a remote Anthropic-compatible endpoint with its own key", () => {
+  const env = {
+    MAGPIE_BASE_URL: "https://api.deepseek.com/anthropic",
+    MAGPIE_MODEL: "deepseek-chat",
+    MAGPIE_API_KEY: "sk-remote",
+    MAGPIE_MAX_TOKENS: "8192",
+  };
+  const models = createMagpieModels(env);
+  const model = resolveMagpieModel(models, env);
+  expect(model.baseUrl).toBe("https://api.deepseek.com/anthropic");
+  expect(model.id).toBe("deepseek-chat");
+  expect(model.headers?.["x-api-key"]).toBe("sk-remote");
+  expect(model.maxTokens).toBe(8192);
+});
+
 describe.skipIf(process.env.MAGPIE_LIVE !== "1")("magpie live", () => {
   it(
     "completes a simple prompt",
