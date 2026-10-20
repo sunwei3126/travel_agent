@@ -8,11 +8,11 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_GITHUB_USERNAME/pi-demo.git"
+    "url": "git+https://github.com/sunwei3126/travel_agent.git"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/pi-demo#readme",
+  "homepage": "https://github.com/sunwei3126/travel_agent#readme",
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/pi-demo/issues"
+    "url": "https://github.com/sunwei3126/travel_agent/issues"
   },
   "engines": {
     "node": ">=22.22"

@@ -17,8 +17,8 @@ clarity, or developer experience are welcome.
 ## Setup
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/pi-demo.git
-cd pi-demo
+git clone https://github.com/sunwei3126/travel_agent.git
+cd travel_agent
 npm ci
 ```
 

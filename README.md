@@ -1,11 +1,11 @@
-# 泰山行程助手 · pi-demo
+# 泰山行程助手 · travel_agent
 
 A durable travel-planning agent that shows its work. Chat with the assistant,
 watch it reason and call tools, research cited sources, generate day cards with
 SVG sketches, and keep the plan within budget. Conversations, research, and
 plans survive refreshes and server restarts.
 
-[![CI](https://github.com/YOUR_GITHUB_USERNAME/pi-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/pi-demo/actions/workflows/ci.yml)
+[![CI](https://github.com/sunwei3126/travel_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/sunwei3126/travel_agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.22-3c873a.svg)](.nvmrc)
 

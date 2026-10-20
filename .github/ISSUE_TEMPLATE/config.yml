@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security report
-    url: https://github.com/YOUR_GITHUB_USERNAME/pi-demo/security/advisories/new
+    url: https://github.com/sunwei3126/travel_agent/security/advisories/new
     about: Please report vulnerabilities privately instead of opening a public issue.
   - name: Design and implementation notes
-    url: https://github.com/YOUR_GITHUB_USERNAME/pi-demo/blob/main/docs/design/travel-agent-design.md
+    url: https://github.com/sunwei3126/travel_agent/blob/main/docs/design/2026-10-19-taishan-travel-agent-design.md
     about: Read the design notes before proposing a large architectural change.
