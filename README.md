@@ -67,6 +67,8 @@ every two seconds while a run is active and prefers the newer day card.
 A longer, visual walkthrough of the request lifecycle and the three failure
 modes fixed in this codebase is in
 [`docs/reports/2026-10-20-chat-trace-explainer.html`](docs/reports/2026-10-20-chat-trace-explainer.html).
+The original design record (Chinese) is in
+[`docs/design/2026-10-19-taishan-travel-agent-design.md`](docs/design/2026-10-19-taishan-travel-agent-design.md).
 
 ## Requirements
 
