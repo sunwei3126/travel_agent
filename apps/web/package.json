@@ -8,7 +8,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=1",
     "typegen": "next typegen",
     "typecheck": "npm run typegen && tsc --noEmit -p tsconfig.json"
   },
