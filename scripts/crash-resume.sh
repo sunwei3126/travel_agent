@@ -12,7 +12,8 @@ else
 fi
 PORT="${PORT:-4100}"
 API_URL="${API_URL:-http://127.0.0.1:${PORT}}"
-BRIEF="泰山玩三天，2026-10-26 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食"
+START_DATE="${ACCEPTANCE_START_DATE:-$(node -e 'console.log(new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10))')}"
+BRIEF="泰山玩三天，${START_DATE} 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食"
 MAX_SEARCHES=40
 
 : "${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY must be set}"
@@ -188,7 +189,7 @@ trap 'exit 143' TERM
 log "starting server (data: $DATA_DIR)"
 start_server
 
-trip=$(api_post "/api/trips" '{"title":"泰山三日游","destination":"泰山","startDate":"2026-10-26","days":3}') ||
+trip=$(api_post "/api/trips" "{\"title\":\"泰山三日游\",\"destination\":\"泰山\",\"startDate\":\"$START_DATE\",\"days\":3}") ||
   fail "could not create trip"
 TRIP_ID=$(printf '%s' "$trip" | json_get tripId)
 [ -n "$TRIP_ID" ] || fail "create trip returned no tripId"

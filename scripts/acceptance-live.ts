@@ -5,8 +5,10 @@ const API_URL = (process.env.API_URL ?? "http://127.0.0.1:4000").replace(
   /\/$/,
   "",
 );
-const BRIEF =
-  "泰山玩三天，2026-10-26 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食";
+const START_DATE =
+  process.env.ACCEPTANCE_START_DATE ??
+  new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const BRIEF = `泰山玩三天，${START_DATE} 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食`;
 const POLL_INTERVAL_MS = 3000;
 const START_TIMEOUT_MS = 60_000;
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
@@ -68,7 +70,7 @@ async function main(): Promise<void> {
     body: JSON.stringify({
       title: "泰山三日游",
       destination: "泰山",
-      startDate: "2026-10-26",
+      startDate: START_DATE,
       days: 3,
     }),
   });
