@@ -1,7 +1,9 @@
 # 旅游规划智能体设计（泰山首测）
 
 日期：2026-10-19
-状态：设计待评审
+状态：已实现（2026-10-20）
+
+> 这是一份原始设计记录。当前行为、环境变量和运行方式以仓库根目录的 README 为准。
 
 ## 1. 意图与背景
 
@@ -64,7 +66,7 @@
 
 ## 7. 约束
 
-- 单用户、本地 Windows 11，中文界面与中文内容。
+- 单用户、本地开发环境（参考环境为 Windows 11；CI 在 Ubuntu 上运行），中文界面与中文内容。
 - Node.js 22.22.1（pi-durable 要求 ≥22.19.0）。
 - pi-durable `@earendil-works/pi-durable` 1.3.0，实验性，API 可能随版本变化。
 - 持久化用 SQLite 单文件；同一时间只能有一个进程打开。
@@ -91,8 +93,8 @@
 
 ### 9.1 总体架构
 
-- `web/`：Next.js App Router + React + CopilotKit，负责聊天界面、按天卡片、行程列表、SVG 展示。
-- `server/`：Node.js + TypeScript 服务，负责：
+- `apps/web/`：Next.js App Router + React + CopilotKit，负责聊天界面、按天卡片、行程列表、SVG 展示。
+- `apps/server/`：Node.js + TypeScript 服务，负责：
   - pi-durable harness 与 SQLite 持久化；
   - DeepSeek Search/Fetch 工具；
   - magpie 模型接入；
@@ -139,7 +141,7 @@
   - 不合格：带错误信息重试一次；仍失败则用确定性占位图，并在卡片上提供“重画”操作。
 - 前端用 `<img src="data:image/svg+xml;base64,...">` 渲染，避免 SVG 内的脚本执行。
 - 草图风格：手绘感、有限配色、少量文字；重点表达地形、路线或当天主题，不追求写实。
-- 费用：每张卡片给分项区间；`plan_finalize` 汇总并与预算比较，超预算时标红并给出削减建议。
+- 费用：每张卡片给分项区间；`plan_finalize` 只汇总区间并设置 `withinBudget`，超预算时由界面标红，并由模型重写受影响的日卡。
 
 ### 9.6 AG-UI 桥
 
@@ -166,18 +168,18 @@
 
 - 用 pi-ai 的 `createProvider()` 定义一个 `magpie` provider：
   - `api: anthropicMessagesApi()`（`@earendil-works/pi-ai/api/anthropic-messages.lazy`）。
-  - `baseUrl: "http://127.0.0.1:3425"`。
-  - key 用固定占位值即可（magpie 接受任意本地 key），不要读取并转发真实上游密钥。
-- 模型 id 通过 `/v1/models` 选择，默认 `openrouter/deepseek/deepseek-v4.1-flash-1017`（1,048,576 上下文）；用环境变量 `MAGPIE_MODEL` 覆盖。
+  - `baseUrl: "http://127.0.0.1:3425"`，可用 `MAGPIE_BASE_URL` 指向任意 Anthropic Messages-compatible 端点。
+  - 本地 magpie 接受占位 key；远端端点通过 `MAGPIE_API_KEY` 提供真实 key（`x-api-key`）。
+- 默认模型为 `deepseek/deepseek-flash`（1,000,000 上下文），用 `MAGPIE_MODEL` 覆盖；`MAGPIE_MAX_TOKENS` 控制最大输出。
 - 规划与 SVG 生成默认用同一个模型；后续可按任务拆模型。
-- 思考等级通过模型配置传入，默认中等；失败时记录并降级。
+- 思考等级通过 `PI_THINKING_LEVEL` 传入，默认 `low`；目前没有自动降级路径，属于已知遗留。
 
 ### 9.9 错误处理与恢复
 
 - 网络错误指数退避重试；DeepSeek 429 遵守 Retry-After，并降低并发。
 - 搜索全部失败：告诉用户失败原因，保留已完成部分，提供重试；不得用模型记忆硬编方案。
 - SVG 两次失败：占位图 + 重画按钮。
-- 超预算：卡片与汇总标红，给出具体削减项。
+- 超预算：卡片与汇总标红；模型根据预算重写受影响日卡（`plan_finalize` 本身只汇总）。
 - pi-durable 的 `onReport` 记录 task fault/parked；界面能显示“任务已暂停”并提供重试。
 - 服务重启：先 `resume()`，再接受新请求；正在生成的回答从最近检查点续跑。
 
@@ -256,6 +258,6 @@
 
 ## 12. 当前状态
 
-- 设计文档写在 `docs/superpowers/specs/`。
-- 当前目录不是 git 仓库，文档尚未提交。
-- 下一步：设计评审（builder check），然后写实现计划。
+- 已实现并验证；运行方式、环境变量和验收命令见根目录 `README.md`。
+- 开发者导览见 `docs/reports/2026-10-20-chat-trace-explainer.html`。
+- 验收脚本的行程日期默认取“今天 + 14 天”，可用 `ACCEPTANCE_START_DATE=YYYY-MM-DD` 覆盖。

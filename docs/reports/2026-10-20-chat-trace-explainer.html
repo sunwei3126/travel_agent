@@ -803,7 +803,7 @@
   </svg>
   <div class="masthead-inner">
     <div>
-      <p class="eyebrow">Developer onboarding · 2026-10-20 · taishan-agent</p>
+      <p class="eyebrow">Developer guide · 2026-10-20</p>
       <h1>让思考与工具调用<br>成为可读的路径</h1>
       <p class="lede">
         泰山行程助手是一个可恢复的旅行规划 agent。对后端同学来说，它是
@@ -1329,8 +1329,8 @@
         <h2>从 brief 到预算：一条真实运行路径</h2>
         <p class="section-intro">
           下面是 trip <code>1761</code> 的真实结果。它验证了工具参数、计划卡、草图、预算和
-          finalize 在同一条链上闭环。注意：这次运行为了绕过上游余额问题使用了远端
-          Anthropic-compatible 端点，thinking 关闭；思考块本身由 magpie 的回归探针单独验证。
+          finalize 在同一条链上闭环。该次运行使用远端 Anthropic-compatible 端点，
+          thinking 关闭；思考块本身由 magpie 的回归探针单独验证。
         </p>
       </div>
 
@@ -1478,8 +1478,7 @@ npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
         <span class="section-kicker">08 · Status</span>
         <h2>现在的验证状态</h2>
         <p class="section-intro">
-          这份页面对应分支 <code>taishan-agent</code> 在 2026-10-20 的状态。
-          数字来自实际运行，不是预算或估计。
+          本页描述仓库在 2026-10-20 的实现。数字来自实际运行，不是预算或估计。
         </p>
       </div>
 
@@ -1514,12 +1513,12 @@ npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
       </ul>
 
       <div class="callout">
-        <span class="label">Provider 现状</span>
+        <span class="label">Provider configuration</span>
         <p>
-          当前运行使用 magpie + thinking on。若 magpie 的 DeepSeek 余额再次耗尽，服务会快速结束
-          且没有助手输出；这不是 mapper 的问题。可用 <code>MAGPIE_*</code> 环境变量切到远端
-          Anthropic-compatible 端点（例如 DeepSeek <code>/anthropic</code>、<code>deepseek-chat</code>、
-          <code>max_tokens 8192</code>），但那条路径的 thinking 支持取决于上游。
+          模型端点通过 <code>MAGPIE_*</code> 配置：默认是本地 magpie（Anthropic Messages
+          格式），也可以指向远端 Anthropic-compatible 端点（例如 DeepSeek
+          <code>/anthropic</code>）。远端端点的 thinking 支持取决于上游模型与参数；
+          CI 与单元测试不需要真实 key，只有 live run 需要。
         </p>
       </div>
     </section>
@@ -1528,7 +1527,7 @@ npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
 
 <footer>
   <span>泰山行程助手 · developer explainer · 2026-10-20</span>
-  <span>branch taishan-agent · 9 commits · 自测：http://localhost:3000</span>
+  <span>pi-demo · developer guide · 2026-10-20 · 本地自测：http://localhost:3000</span>
 </footer>
 
 <button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换明暗主题">切换主题</button>
