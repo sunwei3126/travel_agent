@@ -1,18 +1,48 @@
 {
   "name": "pi-demo",
+  "version": "0.1.0",
   "private": true,
+  "description": "A durable travel-planning agent with visible reasoning and tool traces.",
+  "license": "MIT",
+  "author": "wei sun",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_GITHUB_USERNAME/pi-demo.git"
+  },
+  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/pi-demo#readme",
+  "bugs": {
+    "url": "https://github.com/YOUR_GITHUB_USERNAME/pi-demo/issues"
+  },
+  "engines": {
+    "node": ">=22.22"
+  },
+  "packageManager": "npm@10.9.4",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
+    "dev": "npm run dev:server",
+    "dev:server": "npm run dev --workspace @pi-demo/server",
+    "dev:web": "npm run dev --workspace @pi-demo/web",
+    "build": "npm run build --workspace @pi-demo/web",
+    "start:server": "npm run start --workspace @pi-demo/server",
+    "start:web": "npm run start --workspace @pi-demo/web",
     "test": "npm run test --workspaces --if-present",
-    "dev": "npm run dev --workspaces --if-present",
+    "typegen": "npm run typegen --workspace @pi-demo/web",
+    "typecheck": "npm run typecheck --workspace @pi-demo/server && npm run typecheck --workspace @pi-demo/shared && npm run typecheck --workspace @pi-demo/web",
     "acceptance:live": "tsx scripts/acceptance-live.ts",
     "acceptance:crash": "bash scripts/crash-resume.sh",
     "probe:thinking": "tsx scripts/probe-thinking.ts"
   },
+  "keywords": [
+    "travel-agent",
+    "durable-agents",
+    "ag-ui",
+    "copilotkit",
+    "pi-durable"
+  ],
   "devDependencies": {
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

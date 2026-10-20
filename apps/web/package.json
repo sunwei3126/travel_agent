@@ -2,12 +2,15 @@
   "name": "@pi-demo/web",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typegen": "next typegen",
+    "typecheck": "npm run typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@ag-ui/client": "^1.0.3",
