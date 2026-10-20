@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Tests, types, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate lockfile
+        run: |
+          if grep -q 'registry.npmmirror.com' package-lock.json; then
+            echo "package-lock.json still points at npmmirror"
+            exit 1
+          fi
+          grep -q '"integrity"' package-lock.json
+          node -e "const l=require('./package-lock.json'); for (const p of ['node_modules/@next/swc-linux-x64-gnu','node_modules/@esbuild/linux-x64']) if (!l.packages[p]) { console.error('missing '+p); process.exit(1) }"
+
+      # Generates next-env.d.ts and .next/types before the standalone tsc run.
+      # Live acceptance is intentionally not part of CI: it needs a model
+      # endpoint and DEEPSEEK_API_KEY.
+      - name: Generate Next types
+        run: npm run typegen
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Restore Next build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/web/**/*.ts', 'apps/web/**/*.tsx', 'apps/web/**/*.css', 'packages/shared/**/*.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('package-lock.json') }}-
+
+      - name: Build
+        run: npm run build
+
+      - name: Check generated files are ignored
+        run: test -z "$(git status --porcelain)"

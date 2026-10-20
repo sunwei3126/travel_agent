@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible problem
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please remove API keys, tokens, and personal data
+        from logs before submitting. For security issues, use the private
+        advisory link instead of this form.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the API and web app
+        2. Create a trip with ...
+        3. Send ...
+        4. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, provider/model endpoint, and the commit or version.
+      placeholder: |
+        OS: Ubuntu 24.04
+        Node: 22.22.1
+        Model: magpie deepseek/deepseek-flash
+        Commit: abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste logs or attach images. Remove secrets first.
+      render: shell
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and could not find this problem.
+          required: true
+        - label: I removed API keys, tokens, and personal data from this report.
+          required: true
