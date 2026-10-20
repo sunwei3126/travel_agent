@@ -1,0 +1,1663 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>泰山行程助手 · 新同学实现导览</title>
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #e9ebe6;
+    --paper-raised: #f4f5f1;
+    --paper-deep: #dfe3dd;
+    --ink: #1c2320;
+    --ink-soft: #4c5a54;
+    --ink-faint: #74827c;
+    --line: #c7cec7;
+    --line-strong: #a5b0a8;
+    --pine: #2d5a4c;
+    --pine-soft: #dce7e1;
+    --cinnabar: #a63a2b;
+    --cinnabar-soft: #f0ded9;
+    --mist: #879993;
+    --ok: #2f6b4f;
+    --warn: #8a641c;
+    --bad: #a63a2b;
+    --code-bg: #e2e6df;
+    --shadow: 0 1px 0 rgba(28, 35, 32, .05), 0 18px 50px -40px rgba(28, 35, 32, .35);
+    --serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", Georgia, serif;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    --measure: 68ch;
+    --radius: 3px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #111614;
+      --paper-raised: #18201d;
+      --paper-deep: #0d1210;
+      --ink: #e1e6df;
+      --ink-soft: #a9b5ae;
+      --ink-faint: #7c8a83;
+      --line: #2b3732;
+      --line-strong: #40524a;
+      --pine: #82b7a3;
+      --pine-soft: #1c312a;
+      --cinnabar: #e17a66;
+      --cinnabar-soft: #3a211d;
+      --mist: #6d7f78;
+      --ok: #7fbd9c;
+      --warn: #d2ab61;
+      --bad: #e17a66;
+      --code-bg: #141b18;
+      --shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 24px 60px -40px rgba(0, 0, 0, .8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #111614;
+    --paper-raised: #18201d;
+    --paper-deep: #0d1210;
+    --ink: #e1e6df;
+    --ink-soft: #a9b5ae;
+    --ink-faint: #7c8a83;
+    --line: #2b3732;
+    --line-strong: #40524a;
+    --pine: #82b7a3;
+    --pine-soft: #1c312a;
+    --cinnabar: #e17a66;
+    --cinnabar-soft: #3a211d;
+    --mist: #6d7f78;
+    --ok: #7fbd9c;
+    --warn: #d2ab61;
+    --bad: #e17a66;
+    --code-bg: #141b18;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 24px 60px -40px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  ::selection { background: var(--cinnabar-soft); color: var(--ink); }
+
+  a { color: var(--pine); text-underline-offset: 3px; }
+  a:hover { color: var(--cinnabar); }
+
+  :focus-visible {
+    outline: 2px solid var(--cinnabar);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .skip-link {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 50;
+    padding: 10px 14px;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: .85rem;
+    transform: translateY(-160%);
+    transition: transform .18s ease;
+  }
+  .skip-link:focus { transform: translateY(0); color: var(--paper); }
+
+  .masthead {
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(1200px 420px at 82% -10%, var(--pine-soft), transparent 70%),
+      linear-gradient(180deg, var(--paper-raised), var(--paper));
+  }
+
+  .masthead .contours {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--mist);
+    opacity: .33;
+    pointer-events: none;
+  }
+
+  .masthead-inner {
+    position: relative;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: clamp(30px, 5vw, 64px) clamp(20px, 5vw, 64px) clamp(34px, 5vw, 58px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 28px;
+    align-items: end;
+  }
+
+  .eyebrow {
+    margin: 0 0 14px;
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+
+  h1 {
+    margin: 0;
+    max-width: 18ch;
+    font-family: var(--serif);
+    font-size: clamp(2.5rem, 5.6vw, 4.6rem);
+    line-height: 1.08;
+    font-weight: 600;
+    letter-spacing: -.015em;
+    text-wrap: balance;
+  }
+
+  .nowrap { white-space: nowrap; }
+  .lede {
+    margin: 20px 0 0;
+    max-width: 60ch;
+    color: var(--ink-soft);
+    font-size: clamp(1rem, 1.4vw, 1.14rem);
+    line-height: 1.85;
+    text-wrap: pretty;
+  }
+
+  .masthead-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-top: 24px;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-faint);
+    letter-spacing: .02em;
+  }
+
+  .seal {
+    align-self: start;
+    justify-self: end;
+    width: 118px;
+    height: 118px;
+    border: 2px solid var(--cinnabar);
+    color: var(--cinnabar);
+    display: grid;
+    place-content: center;
+    text-align: center;
+    transform: rotate(6deg);
+    font-family: var(--serif);
+    line-height: 1.15;
+    letter-spacing: .08em;
+    box-shadow: inset 0 0 0 4px var(--paper), inset 0 0 0 5px var(--cinnabar);
+    opacity: .92;
+  }
+  .seal strong { display: block; font-size: 1.7rem; font-weight: 600; }
+  .seal span { display: block; font-size: .66rem; letter-spacing: .2em; margin-top: 4px; }
+
+  .shell {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 clamp(20px, 5vw, 64px) 96px;
+    display: grid;
+    grid-template-columns: 188px minmax(0, 1fr);
+    gap: clamp(28px, 5vw, 72px);
+    align-items: start;
+  }
+
+  .index {
+    position: sticky;
+    top: 24px;
+    padding-top: 44px;
+    font-size: .82rem;
+  }
+  .index-title {
+    margin: 0 0 12px;
+    font-family: var(--mono);
+    font-size: .66rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .index a {
+    display: block;
+    padding: 6px 0 6px 12px;
+    border-left: 1px solid var(--line);
+    color: var(--ink-soft);
+    text-decoration: none;
+    line-height: 1.35;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .index a:hover { color: var(--ink); border-left-color: var(--line-strong); }
+  .index a[aria-current="true"] {
+    color: var(--cinnabar);
+    border-left-color: var(--cinnabar);
+  }
+
+  main { min-width: 0; padding-top: 44px; }
+
+  section { padding: 34px 0 44px; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: 0; }
+
+  .section-head { display: grid; gap: 8px; margin-bottom: 26px; }
+  .section-kicker {
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--cinnabar);
+  }
+  h2 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: clamp(1.65rem, 3vw, 2.35rem);
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+  }
+  .section-intro { margin: 0; max-width: 64ch; color: var(--ink-soft); }
+
+  h3 {
+    margin: 30px 0 10px;
+    font-family: var(--serif);
+    font-size: 1.22rem;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  p { margin: 0 0 16px; max-width: var(--measure); }
+  p.wide, .wide p { max-width: none; }
+  strong { font-weight: 600; }
+  em { font-style: normal; color: var(--cinnabar); }
+
+  .verdict-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin: 26px 0 8px;
+  }
+  .verdict {
+    background: var(--paper-raised);
+    padding: 20px 20px 18px;
+    display: grid;
+    gap: 6px;
+    align-content: start;
+  }
+  .verdict .n {
+    font-family: var(--serif);
+    font-size: 2.1rem;
+    line-height: 1;
+    color: var(--pine);
+    font-variant-numeric: tabular-nums;
+  }
+  .verdict .t { font-weight: 600; font-size: .95rem; }
+  .verdict .d { color: var(--ink-soft); font-size: .84rem; line-height: 1.6; }
+
+  .metric-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 22px;
+    margin: 24px 0 4px;
+    padding: 18px 0 0;
+    border-top: 1px solid var(--line);
+  }
+  .metric { display: grid; gap: 2px; }
+  .metric b {
+    font-family: var(--mono);
+    font-size: 1.35rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+  }
+  .metric span { font-size: .76rem; color: var(--ink-faint); line-height: 1.4; }
+
+  .figure {
+    margin: 30px 0;
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    box-shadow: var(--shadow);
+  }
+  .figure-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px 18px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .figure-title { font-weight: 600; font-size: .9rem; }
+  .figure-note { font-family: var(--mono); font-size: .68rem; color: var(--ink-faint); }
+  .figure-body { padding: 18px; overflow-x: auto; }
+  .figure-body svg { display: block; min-width: 820px; width: 100%; height: auto; }
+  .figure-caption {
+    padding: 12px 18px 16px;
+    font-size: .8rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--line);
+    max-width: none;
+  }
+
+  .legend-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 0 18px 16px;
+    font-family: var(--mono);
+    font-size: .68rem;
+    color: var(--ink-faint);
+  }
+  .legend-row i {
+    display: inline-block;
+    width: 9px; height: 9px;
+    margin-right: 5px;
+    border: 1px solid currentColor;
+    vertical-align: -1px;
+  }
+
+  .scenario-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 18px 16px;
+  }
+  .scenario-controls button {
+    font-family: var(--mono);
+    font-size: .69rem;
+    letter-spacing: .03em;
+    padding: 6px 11px;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 999px;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .scenario-controls button:hover { color: var(--ink); border-color: var(--ink-soft); }
+  .scenario-controls button[aria-pressed="true"] {
+    background: var(--pine);
+    border-color: var(--pine);
+    color: var(--paper);
+  }
+  .scenario-caption {
+    padding: 0 18px 16px;
+    font-size: .8rem;
+    color: var(--ink-soft);
+    max-width: none;
+  }
+
+  .seq-group { opacity: .1; transition: opacity .2s ease; }
+  .seq-group text { transition: opacity .2s ease; }
+  .figure[data-scenario="send"] .seq-group[data-scenario="send"],
+  .figure[data-scenario="tools"] .seq-group[data-scenario="tools"],
+  .figure[data-scenario="resume"] .seq-group[data-scenario="resume"] { opacity: 1; }
+  .figure[data-scenario="send"] .seq-group:not([data-scenario="send"]) text,
+  .figure[data-scenario="tools"] .seq-group:not([data-scenario="tools"]) text,
+  .figure[data-scenario="resume"] .seq-group:not([data-scenario="resume"]) text { opacity: 0; }
+
+  .callout {
+    margin: 26px 0;
+    padding: 20px 22px;
+    border-left: 2px solid var(--cinnabar);
+    background: color-mix(in srgb, var(--cinnabar-soft) 58%, var(--paper-raised));
+    max-width: none;
+  }
+  .callout p { margin: 0; max-width: none; }
+  .callout .label {
+    display: block;
+    margin-bottom: 6px;
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--cinnabar);
+  }
+
+  .insight-list {
+    counter-reset: insight;
+    list-style: none;
+    margin: 26px 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .insight-list li {
+    counter-increment: insight;
+    background: var(--paper-raised);
+    padding: 20px 22px 18px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .insight-list li::before {
+    content: counter(insight, decimal-leading-zero);
+    font-family: var(--mono);
+    font-size: .72rem;
+    color: var(--cinnabar);
+    padding-top: 5px;
+    letter-spacing: .05em;
+  }
+  .insight-list h3 { margin: 0 0 6px; font-size: 1.04rem; }
+  .insight-list p { margin: 0; font-size: .92rem; color: var(--ink-soft); max-width: none; }
+  .insight-list code { font-size: .82em; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .84em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--ink);
+  }
+
+  pre {
+    margin: 14px 0 20px;
+    padding: 16px 18px;
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    overflow-x: auto;
+    line-height: 1.6;
+    font-size: .8rem;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .pre-wrap { max-width: none; }
+
+  .table-wrap { overflow-x: auto; margin: 22px 0; border: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: .88rem; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: .66rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--paper-deep);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--paper-deep) 45%, transparent); }
+  td code { white-space: nowrap; }
+
+  .chip {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: .64rem;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .chip.ok { color: var(--ok); }
+  .chip.warn { color: var(--warn); }
+  .chip.bad { color: var(--bad); }
+
+  .pitfalls { margin-top: 26px; }
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 0;
+  }
+  .tabs [role="tab"] {
+    font: inherit;
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .02em;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .tabs [role="tab"]:hover { color: var(--ink); }
+  .tabs [role="tab"][aria-selected="true"] {
+    background: var(--paper-raised);
+    border-color: var(--line);
+    color: var(--cinnabar);
+  }
+  .tab-panel {
+    border: 1px solid var(--line);
+    border-top: 0;
+    background: var(--paper-raised);
+    padding: 22px 22px 18px;
+  }
+  .tab-panel[hidden] { display: none; }
+  .tab-panel h3 { margin-top: 0; }
+  .tab-panel > p { max-width: none; }
+
+  .events { list-style: none; margin: 18px 0 4px; padding: 0; display: grid; gap: 1px; }
+  .events li {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 12px;
+    background: var(--paper);
+    font-size: .82rem;
+  }
+  .events .dot {
+    width: 8px; height: 8px;
+    margin-top: 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: var(--paper-raised);
+  }
+  .events .dot.bad { border-color: var(--bad); background: var(--bad); }
+  .events .dot.ok { border-color: var(--ok); background: var(--ok); }
+  .events .dot.reason { border-color: var(--cinnabar); background: var(--cinnabar); }
+  .events b {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: .76rem;
+    letter-spacing: .01em;
+  }
+  .events span { color: var(--ink-soft); }
+  .events .guard {
+    border-left: 2px solid var(--cinnabar);
+    background: color-mix(in srgb, var(--cinnabar-soft) 45%, var(--paper));
+  }
+
+  .timeline { list-style: none; margin: 30px 0 6px; padding: 0; position: relative; }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: var(--line-strong);
+  }
+  .timeline li {
+    position: relative;
+    padding: 0 0 22px 46px;
+  }
+  .timeline li:last-child { padding-bottom: 0; }
+  .timeline .marker {
+    position: absolute;
+    left: 6px;
+    top: 5px;
+    width: 19px;
+    height: 19px;
+    border: 1px solid var(--line-strong);
+    background: var(--paper-raised);
+    border-radius: 50%;
+    display: grid;
+    place-content: center;
+    font-family: var(--mono);
+    font-size: .56rem;
+    color: var(--ink-faint);
+  }
+  .timeline li.done .marker { border-color: var(--ok); color: var(--ok); }
+  .timeline .step-title { font-weight: 600; font-size: .93rem; }
+  .timeline .step-detail { color: var(--ink-soft); font-size: .84rem; max-width: none; }
+  .timeline .step-detail code { font-size: .8em; }
+
+  .budget {
+    margin: 30px 0 8px;
+    padding: 20px 22px;
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    max-width: none;
+  }
+  .budget-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .budget-title { font-weight: 600; font-size: .92rem; }
+  .budget-value { font-family: var(--mono); font-size: .86rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .budget-track {
+    position: relative;
+    height: 10px;
+    margin: 18px 0 8px;
+    background: var(--paper-deep);
+    border: 1px solid var(--line);
+  }
+  .budget-range {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 62%;
+    width: 24.6%;
+    background: var(--pine);
+  }
+  .budget-cap {
+    position: absolute;
+    top: -5px; bottom: -5px;
+    right: 0;
+    width: 1px;
+    background: var(--cinnabar);
+  }
+  .budget-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: .66rem;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px;
+    margin-top: 24px;
+  }
+  .plain-list { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 9px; }
+  .plain-list li { color: var(--ink-soft); font-size: .9rem; }
+  .plain-list li strong { color: var(--ink); }
+
+  .command-block { position: relative; margin: 14px 0 22px; }
+  .command-block pre { margin: 0; padding-right: 94px; }
+  .copy {
+    position: absolute;
+    top: 9px; right: 9px;
+    font-family: var(--mono);
+    font-size: .64rem;
+    letter-spacing: .04em;
+    border: 1px solid var(--line-strong);
+    background: var(--paper-raised);
+    color: var(--ink-soft);
+    padding: 5px 9px;
+    cursor: pointer;
+  }
+  .copy:hover { color: var(--ink); border-color: var(--ink-soft); }
+
+  details {
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    margin: 16px 0;
+  }
+  details summary {
+    cursor: pointer;
+    padding: 13px 16px;
+    font-weight: 600;
+    font-size: .9rem;
+    list-style: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "＋"; color: var(--cinnabar); margin-right: 9px; font-family: var(--mono); }
+  details[open] summary::before { content: "－"; }
+  details .details-body { padding: 0 16px 16px; border-top: 1px solid var(--line); }
+  details .details-body p { max-width: none; font-size: .9rem; color: var(--ink-soft); }
+
+  .status-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin: 24px 0;
+  }
+  .status-cell { background: var(--paper-raised); padding: 16px 18px; display: grid; gap: 4px; }
+  .status-cell b { font-family: var(--mono); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .status-cell span { font-size: .76rem; color: var(--ink-faint); }
+
+  footer {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 28px clamp(20px, 5vw, 64px) 56px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 24px;
+    font-family: var(--mono);
+    font-size: .68rem;
+    color: var(--ink-faint);
+  }
+
+  .theme-toggle {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 40;
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .06em;
+    padding: 9px 13px;
+    border: 1px solid var(--line-strong);
+    background: var(--paper-raised);
+    color: var(--ink-soft);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .theme-toggle:hover { color: var(--ink); border-color: var(--ink-soft); }
+
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .index {
+      position: static;
+      padding-top: 26px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+    .index ol { display: flex; flex-wrap: wrap; gap: 0 14px; }
+    .index a { border-left: 0; border-bottom: 1px solid transparent; padding: 4px 0; }
+    .index a[aria-current="true"] { border-bottom-color: var(--cinnabar); }
+    main { padding-top: 0; }
+    .masthead-inner { grid-template-columns: minmax(0, 1fr); }
+    .seal { justify-self: start; width: 92px; height: 92px; }
+    .seal strong { font-size: 1.3rem; }
+  }
+
+  @media (max-width: 720px) {
+    body { font-size: 15.5px; }
+    .eyebrow { white-space: normal; }
+    .verdict-grid, .metric-strip, .status-strip, .two-col { grid-template-columns: 1fr; }
+    .verdict .n { font-size: 1.7rem; }
+    .insight-list li { grid-template-columns: 30px minmax(0, 1fr); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+  }
+
+  @media print {
+    .index, .theme-toggle, .scenario-controls, .copy, .skip-link { display: none !important; }
+    .shell { display: block; }
+    .masthead { border-bottom-color: #999; }
+    .figure, .budget, details, .tab-panel { break-inside: avoid; }
+    body { background: #fff; color: #000; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<header class="masthead">
+  <svg class="contours" viewBox="0 0 1440 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <g fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M-40 330 C 180 280, 300 330, 470 292 S 760 200, 940 236 S 1230 330, 1480 270"/>
+      <path d="M-40 356 C 190 306, 310 356, 480 318 S 770 226, 950 262 S 1240 356, 1480 296"/>
+      <path d="M-40 382 C 200 332, 320 382, 490 344 S 780 252, 960 288 S 1250 382, 1480 322"/>
+      <path d="M-40 408 C 210 358, 330 408, 500 370 S 790 278, 970 314 S 1260 408, 1480 348"/>
+      <path d="M-40 250 C 170 200, 290 250, 460 212 S 750 120, 930 156 S 1220 250, 1480 190" opacity=".6"/>
+      <path d="M-40 210 C 160 160, 280 210, 450 172 S 740 80, 920 116 S 1210 210, 1480 150" opacity=".35"/>
+      <path d="M180 300 L 300 262 L 372 280 L 470 236 L 560 250 L 640 214" stroke-width="2" stroke-dasharray="2 6" opacity=".8"/>
+      <circle cx="470" cy="236" r="4" fill="currentColor" stroke="none"/>
+      <circle cx="640" cy="214" r="4" fill="currentColor" stroke="none"/>
+    </g>
+  </svg>
+  <div class="masthead-inner">
+    <div>
+      <p class="eyebrow">Developer onboarding · 2026-10-20 · taishan-agent</p>
+      <h1>让思考与工具调用<br>成为可读的路径</h1>
+      <p class="lede">
+        泰山行程助手是一个可恢复的旅行规划 agent。对后端同学来说，它是
+        <span class="nowrap">pi-durable</span> 上的对话与工具任务；对前端同学来说，它是一条
+        <span class="nowrap">AG-UI</span> 事件流；
+        对用户来说，它是能看见思考、工具和日程卡的一次对话。这份导览按
+        “一次发送如何走到屏幕”组织，先给心智模型，再给实现地图与坑位。
+      </p>
+      <div class="masthead-meta">
+        <span>Next 16.4 · React 19 · Fastify 5</span>
+        <span>AG-UI 1.0.3 · CopilotKit 1.79</span>
+        <span>pi-durable 1.3 · SQLite</span>
+      </div>
+    </div>
+    <div class="seal" aria-label="已完成评审与验证">
+      <strong>入门</strong>
+      <span>READ FIRST</span>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="index" aria-label="章节索引">
+    <p class="index-title">Waypoints</p>
+    <ol>
+      <li><a href="#model">心智模型</a></li>
+      <li><a href="#flow">一次发送</a></li>
+      <li><a href="#insights">设计洞察</a></li>
+      <li><a href="#map">数据与实现地图</a></li>
+      <li><a href="#pitfalls">三个坑位</a></li>
+      <li><a href="#run">一次真实运行</a></li>
+      <li><a href="#start">开始工作</a></li>
+      <li><a href="#status">现状与验证</a></li>
+    </ol>
+  </aside>
+
+  <main id="main">
+    <section id="model">
+      <div class="section-head">
+        <span class="section-kicker">01 · Mental model</span>
+        <h2>五个部件，一条可恢复的事件链</h2>
+        <p class="section-intro">
+          不要从这个仓库的目录开始读。先记住这句话：
+          <strong>浏览器只负责显示，Next 只负责协议桥接，真正的状态在 Fastify 背后的 durable conversation 里。</strong>
+          页面刷新、进程重启、工具跑一半，都靠这条链恢复。
+        </p>
+      </div>
+
+      <div class="figure">
+        <div class="figure-head">
+          <span class="figure-title">系统地图</span>
+          <span class="figure-note">浏览器 ⇄ Next runtime ⇄ Fastify ⇄ pi-durable</span>
+        </div>
+        <div class="figure-body">
+          <svg viewBox="0 0 1000 430" role="img" aria-label="系统地图：浏览器、Next 运行时、Fastify 服务、pi-durable、模型与工具之间的关系">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+              </marker>
+            </defs>
+            <g class="diagram" fill="none" stroke="currentColor" stroke-width="1.2">
+              <rect x="18" y="18" width="964" height="394" stroke-dasharray="4 6" opacity=".35"/>
+              <text x="34" y="42" stroke="none" fill="currentColor" font-size="10" letter-spacing="2" opacity=".55">APPS/WEB</text>
+              <text x="638" y="42" stroke="none" fill="currentColor" font-size="10" letter-spacing="2" opacity=".55">APPS/SERVER</text>
+
+              <!-- browser -->
+              <rect x="44" y="96" width="190" height="136" rx="4" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+              <text x="62" y="126" stroke="none" fill="var(--ink)" font-size="14" font-weight="600">ChatPanel / TripView</text>
+              <text x="62" y="150" stroke="none" fill="var(--ink-soft)" font-size="11">useCopilotChatInternal</text>
+              <text x="62" y="169" stroke="none" fill="var(--ink-soft)" font-size="11">折叠思考 · 工具块 · 日程卡</text>
+              <text x="62" y="196" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">buildChatSegments()</text>
+              <text x="62" y="214" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">2s snapshot polling</text>
+
+              <!-- next runtime -->
+              <path d="M286 86 L 420 86 L 436 106 L 436 242 L 286 242 Z" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+              <text x="304" y="116" stroke="none" fill="var(--ink)" font-size="14" font-weight="600">Next runtime</text>
+              <text x="304" y="140" stroke="none" fill="var(--ink-soft)" font-size="11">/api/copilotkit/[[...slug]]</text>
+              <text x="304" y="159" stroke="none" fill="var(--ink-soft)" font-size="11">CopilotRuntime + HttpAgent</text>
+              <text x="304" y="180" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">per-trip runtimeUrl</text>
+              <text x="304" y="198" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">enableInspector=false</text>
+              <text x="304" y="222" stroke="none" fill="var(--ink-faint)" font-size="10">协议桥接，不持有业务状态</text>
+
+              <!-- fastify -->
+              <rect x="502" y="86" width="208" height="166" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+              <rect x="502" y="86" width="208" height="5" fill="var(--pine)" stroke="none"/>
+              <text x="520" y="116" stroke="none" fill="var(--ink)" font-size="14" font-weight="600">Fastify / TravelService</text>
+              <text x="520" y="140" stroke="none" fill="var(--ink-soft)" font-size="11">POST /agui?tripId=</text>
+              <text x="520" y="159" stroke="none" fill="var(--ink-soft)" font-size="11">GET /api/trips/:id[/transcript]</text>
+              <text x="520" y="180" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">submitMessage · watchEvents</text>
+              <text x="520" y="198" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">mapper: PiEvent → AG-UI</text>
+              <text x="520" y="219" stroke="none" fill="var(--ink-faint)" font-size="10">RUN_STARTED · SNAPSHOT · RUN_FINISHED</text>
+              <text x="520" y="238" stroke="none" fill="var(--ink-faint)" font-size="10">负责把增量事件投影成可消费的流</text>
+
+              <!-- pi durable -->
+              <path d="M786 96 v132 a78 20 0 0 0 156 0 v-132 a78 20 0 0 0 -156 0" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+              <ellipse cx="864" cy="96" rx="78" ry="20" fill="var(--pine-soft)" stroke="var(--line-strong)"/>
+              <text x="812" y="132" stroke="none" fill="var(--ink)" font-size="14" font-weight="600">pi-durable</text>
+              <text x="800" y="154" stroke="none" fill="var(--ink-soft)" font-size="11">SQLite + durable docs</text>
+              <text x="800" y="175" stroke="none" fill="var(--ink-soft)" font-size="11">brief · plan · sources</text>
+              <text x="800" y="194" stroke="none" fill="var(--ink-soft)" font-size="11">transcript · research 计数</text>
+              <text x="800" y="216" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">conversation-scoped</text>
+
+              <!-- model/tools -->
+              <rect x="792" y="284" width="150" height="58" rx="29" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+              <text x="867" y="308" stroke="none" fill="var(--ink)" font-size="12" font-weight="600" text-anchor="middle">模型 / 搜索</text>
+              <text x="867" y="326" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)" text-anchor="middle">magpie · DeepSeek</text>
+
+              <!-- arrows -->
+              <path d="M234 150 H 286" marker-end="url(#arrow)"/>
+              <text x="260" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="middle" font-family="var(--mono)">agent/run</text>
+
+              <path d="M436 150 H 502" marker-end="url(#arrow)"/>
+              <text x="469" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="middle" font-family="var(--mono)">/agui</text>
+
+              <path d="M710 150 H 786" marker-end="url(#arrow)"/>
+              <text x="780" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="end" font-family="var(--mono)">watch + submit</text>
+
+              <path d="M864 248 V 284" marker-end="url(#arrow)"/>
+              <text x="874" y="270" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">tools</text>
+
+              <path d="M786 214 C 750 262, 700 266, 660 252" marker-end="url(#arrow)" stroke-dasharray="3 4"/>
+              <text x="724" y="274" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">tool_execution_*</text>
+
+              <path d="M502 232 C 466 280, 438 292, 436 292" marker-end="url(#arrow)" stroke-dasharray="3 4"/>
+              <text x="470" y="308" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">events</text>
+
+              <path d="M286 300 C 176 350, 120 340, 96 232" marker-end="url(#arrow)" stroke-dasharray="2 5"/>
+              <text x="156" y="356" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">GET /backend/api/trips/:id/transcript</text>
+
+              <text x="44" y="394" stroke="none" fill="var(--ink-soft)" font-size="11">刷新恢复走 REST；实时聊天走 AG-UI。两条路径共享同一条 durable transcript。</text>
+            </g>
+          </svg>
+        </div>
+        <div class="legend-row" aria-hidden="true">
+          <span><i style="border-style:solid;color:var(--line-strong)"></i>实时事件</span>
+          <span><i style="border-style:dashed;color:var(--line-strong)"></i>恢复 / 查询</span>
+          <span><i style="border-radius:50%;color:var(--pine)"></i>durable 状态</span>
+        </div>
+        <div class="figure-caption">
+          关键点：Next 运行时是协议桥，不是状态所有者。业务状态在 pi-durable；
+          UI 同时消费实时状态和 durable 快照，并用“更新的 day card”决定信谁。
+        </div>
+      </div>
+
+      <div class="metric-strip" aria-label="项目规模">
+        <div class="metric"><b>6</b><span>agent 工具（brief / day / finalize / search / fetch / sketch）</span></div>
+        <div class="metric"><b>4</b><span>共享数据层：trip / brief / plan / sources</span></div>
+        <div class="metric"><b>3</b><span>核心协议：AG-UI、pi-durable、CopilotKit</span></div>
+        <div class="metric"><b>1</b><span>每个 trip 一个 durable conversation</span></div>
+      </div>
+    </section>
+
+    <section id="flow">
+      <div class="section-head">
+        <span class="section-kicker">02 · Request lifecycle</span>
+        <h2>一次发送，如何变成屏幕上的折叠块</h2>
+        <p class="section-intro">
+          先看“首次发送”。这里最容易误解的是：前端并没有直接调用 Fastify；
+          它调用 Next 的 per-trip CopilotKit runtime，运行时再把 AG-UI 请求转给
+          <code>/agui</code>。切换下面的场景，观察每条路径。
+        </p>
+      </div>
+
+      <div class="figure" id="seq-figure" data-scenario="send">
+        <div class="figure-head">
+          <span class="figure-title">发送 / 工具 / 恢复：三条路径</span>
+          <span class="figure-note">实线 = 实时；虚线 = 查询</span>
+        </div>
+        <div class="scenario-controls" role="group" aria-label="选择时序场景">
+          <button type="button" data-scenario="send" aria-pressed="true">首次发送</button>
+          <button type="button" data-scenario="tools" aria-pressed="false">工具执行</button>
+          <button type="button" data-scenario="resume" aria-pressed="false">刷新恢复</button>
+        </div>
+        <div class="figure-body">
+          <svg viewBox="0 0 1000 540" role="img" aria-label="时序图：浏览器、Next 运行时、Fastify、pi-durable、模型与工具之间的事件顺序">
+            <defs>
+              <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+              </marker>
+            </defs>
+            <g fill="none" stroke="currentColor" stroke-width="1.1">
+              <!-- lifelines -->
+              <g stroke="var(--line)" stroke-dasharray="4 6">
+                <path d="M100 92 V 500"/><path d="M300 92 V 500"/><path d="M500 92 V 500"/><path d="M700 92 V 500"/><path d="M900 92 V 500"/>
+              </g>
+              <!-- heads -->
+              <g>
+                <rect x="46" y="58" width="108" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+                <text x="100" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Browser</text>
+                <rect x="226" y="58" width="148" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+                <text x="300" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Next runtime</text>
+                <rect x="430" y="58" width="140" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+                <text x="500" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Fastify /agui</text>
+                <rect x="632" y="58" width="136" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+                <text x="700" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">pi-durable</text>
+                <rect x="828" y="58" width="144" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
+                <text x="900" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Model / tools</text>
+              </g>
+
+              <!-- send scenario -->
+              <g class="seq-group" data-scenario="send">
+                <path d="M100 124 H 300" marker-end="url(#arrow2)"/>
+                <text x="200" y="116" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">POST /api/copilotkit/:id</text>
+
+                <path d="M300 160 H 500" marker-end="url(#arrow2)"/>
+                <text x="400" y="152" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">HttpAgent → /agui?tripId</text>
+
+                <path d="M500 196 H 700" marker-end="url(#arrow2)"/>
+                <text x="600" y="188" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">watchEvents + submitMessage</text>
+
+                <path d="M700 232 H 900" marker-end="url(#arrow2)"/>
+                <text x="800" y="224" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">generation task</text>
+
+                <path d="M500 268 H 300" marker-end="url(#arrow2)"/>
+                <text x="400" y="260" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">RUN_STARTED + SNAPSHOT</text>
+
+                <path d="M300 304 H 100" marker-end="url(#arrow2)"/>
+                <text x="200" y="296" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">SSE / agent/run</text>
+
+                <path d="M500 340 H 300" marker-end="url(#arrow2)"/>
+                <text x="400" y="332" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">REASONING_* / TEXT_* / TOOL_CALL_*</text>
+
+                <path d="M300 376 H 100" marker-end="url(#arrow2)"/>
+                <text x="200" y="368" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">messages + tool trace</text>
+              </g>
+
+              <!-- tools scenario -->
+              <g class="seq-group" data-scenario="tools">
+                <path d="M700 124 H 900" marker-end="url(#arrow2)" stroke-dasharray="3 4"/>
+                <text x="800" y="116" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">deepseek_search / fetch</text>
+
+                <path d="M900 160 H 700" marker-end="url(#arrow2)" stroke-dasharray="3 4"/>
+                <text x="800" y="152" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">tool result</text>
+
+                <path d="M700 196 H 500" marker-end="url(#arrow2)"/>
+                <text x="600" y="188" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">tool_execution_update / end</text>
+
+                <path d="M500 232 H 300" marker-end="url(#arrow2)"/>
+                <text x="400" y="224" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">CUSTOM travel.tool_progress</text>
+
+                <path d="M300 268 H 100" marker-end="url(#arrow2)"/>
+                <text x="200" y="260" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">TOOL_CALL_RESULT + metadata</text>
+
+                <path d="M700 420 H 500" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="600" y="412" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="middle" font-family="var(--mono)">durable tool result</text>
+              </g>
+
+              <!-- resume scenario -->
+              <g class="seq-group" data-scenario="resume">
+                <path d="M100 124 H 300" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="200" y="116" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">GET /backend/api/trips/:id</text>
+
+                <path d="M100 160 H 300" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="200" y="152" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">GET …/transcript</text>
+
+                <path d="M300 196 H 500" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="400" y="188" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">snapshot + messages</text>
+
+                <path d="M500 232 H 700" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="600" y="224" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">read durable docs / entries</text>
+
+                <path d="M500 268 H 300" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="400" y="260" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">snapshot + transcript</text>
+
+                <path d="M300 304 H 100" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="200" y="296" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">setMessages(history)</text>
+
+                <path d="M100 420 H 300" marker-end="url(#arrow2)" stroke-dasharray="2 5"/>
+                <text x="200" y="412" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">if running: poll 2s → refetch</text>
+              </g>
+
+              <text x="46" y="522" stroke="none" fill="var(--ink-faint)" font-size="10">切换场景显示该路径的标签；其余箭头保留为淡色上下文。</text>
+            </g>
+          </svg>
+        </div>
+        <p class="scenario-caption" id="scenario-caption">
+          首次发送：agent/run 进入 Next runtime，HttpAgent 调 Fastify /agui；Fastify 先挂 watcher 再提交消息，随后写 RUN_STARTED、两个快照和实时事件。
+        </p>
+      </div>
+
+      <p>
+        记住两个边界：<strong>Next 运行时是无状态桥</strong>，它按 trip 构造 HttpAgent；
+        <strong>Fastify 的 <code>/agui</code> 是唯一启动 run 的地方</strong>，它先挂 watcher、再提交消息，
+        这样 <code>run_start</code> 和 <code>run_end</code> 都不会丢。快照里的用户消息由
+        <code>pending-user-&lt;runId&gt;</code> 补上，避免 MESSAGES_SNAPSHOT 覆盖刚发送的消息。
+      </p>
+    </section>
+
+    <section id="insights">
+      <div class="section-head">
+        <span class="section-kicker">03 · Design insights</span>
+        <h2>这套实现真正值得学的地方</h2>
+        <p class="section-intro">
+          下面七条不是“最佳实践”清单，而是这个系统在真实运行中被迫形成的选择。
+          每条都对应一个具体的失败模式。
+        </p>
+      </div>
+
+      <ol class="insight-list">
+        <li>
+          <div>
+            <h3>durable doc 是状态，事件流只是投影</h3>
+            <p>brief、plan、sources、research 计数都是 pi-durable 文档；重启、崩溃、刷新后都能恢复。事件流可以断，状态不能丢。所有“刷新后还在”的能力都来自这里。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>mapper 是有状态的投影器，不是无脑转发</h3>
+            <p>pi 事件是增量的、provider-specific 的；AG-UI 要求严格的 span 生命周期。mapper 必须记住已发送文本、reasoning span、tool call 状态，并在 <code>run_end</code> 前关闭所有实体，否则 <code>verifyEvents</code> 会拒绝 <code>RUN_FINISHED</code>。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>工具参数有两条生命周期，别混在一起</h3>
+            <p>模型流里的 <code>toolcall_delta</code> 是 <code>path + 值片段</code>，不是 JSON；执行阶段的 <code>tool_execution_start.args</code> 才是权威对象。正确做法是：只发一次权威 JSON，<code>TOOL_CALL_END</code> 等执行开始或 <code>run_end</code>。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3><code>message_end</code> 会回放整条消息</h3>
+            <p>它带着完整的 assistant content 再次出现。已经流式发过的 thinking 块不能再发一遍；重开 span 时必须携带已发送长度，只补后缀。否则用户会在回答下方看到完整的思考过程第二次出现。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>文本要懒启动，思考才能排在前面</h3>
+            <p>空的 <code>message_start</code> 不发 <code>TEXT_MESSAGE_START</code>；首个文本内容或结束时才发。这样既不会出现空助手气泡，也能让 reasoning 块自然地排在文本之前。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>UI 同时消费实时状态与 durable 快照</h3>
+            <p>聊天消息来自 CopilotKit 的实时事件；计划卡来自 <code>useTripSnapshot</code> 的 2 秒轮询。两者都用“最新 day card 的 updatedAt”比较新旧，而不是盲信任何一边。</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>每个 trip 一个 conversation，工具任务也 durable</h3>
+            <p>研究、抓取、草图都是 durable task。生成任务失败会 park，工具任务失败不会结束 run；<code>faults</code> 和 <code>travel.task_failed</code> 把这两种情况分开呈现。崩溃恢复测试专门验证这条边界。</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <span class="label">一条经验</span>
+        <p>
+          当“实时”和“durable”同时存在时，先问：<strong>谁是记录，谁是视图？</strong>
+          这个系统里，pi-durable 的 transcript 是记录；CopilotKit 的消息、计划卡、研究计数都是视图。
+          任何视图都可以重建，任何记录都不应该被视图覆盖。
+        </p>
+      </div>
+    </section>
+
+    <section id="map">
+      <div class="section-head">
+        <span class="section-kicker">04 · Data &amp; implementation</span>
+        <h2>两种消息形状，一张实现地图</h2>
+        <p class="section-intro">
+          最容易卡住新人的地方，是“为什么同一段历史有两种形状”。原因是职责不同：
+          pi-durable 的 transcript 面向持久化，AG-UI 的 Message 面向传输和渲染。
+        </p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>层</th><th>形状</th><th>关键字段</th><th>转换</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>pi-durable entry</td>
+              <td><code>EntryRecord.model[0]</code></td>
+              <td>assistant content blocks（thinking / text / toolCall）、toolResult、user</td>
+              <td><code>toTranscriptEntries()</code></td>
+            </tr>
+            <tr>
+              <td>共享 transcript</td>
+              <td><code>TranscriptEntry</code></td>
+              <td><code>role</code>, <code>content</code>, <code>toolCalls[{id,name,arguments}]</code>, <code>toolCallId</code>, <code>error</code>, <code>encryptedValue</code></td>
+              <td><code>toAguiMessages()</code></td>
+            </tr>
+            <tr>
+              <td>AG-UI / UI</td>
+              <td><code>Message</code></td>
+              <td><code>role</code>, <code>content</code>, <code>toolCalls[{id,type,function:{name,arguments}}]</code>, <code>metadata["travel.tool"]</code></td>
+              <td><code>buildChatSegments()</code></td>
+            </tr>
+            <tr>
+              <td>渲染分组</td>
+              <td><code>ChatSegment</code> / <code>ToolTrace</code></td>
+              <td>user / reasoning / assistant（附 toolCalls + 匹配的 result）/ orphan tool</td>
+              <td><code>ChatMessages</code> + <code>ToolCallBlock</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>目录地图</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>路径</th><th>职责</th><th>先看什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>packages/shared/src/trip.ts</code></td><td>共享类型：TripBrief / TripPlan / DayCard / Claim / TripSnapshot / TranscriptEntry</td><td>先建立数据形状</td></tr>
+            <tr><td><code>apps/server/src/agent/</code></td><td>系统提示、6 个工具、extension 注册、深搜/抓取/草图</td><td><code>prompts.ts</code> 与 <code>tools/</code></td></tr>
+            <tr><td><code>apps/server/src/harness/service.ts</code></td><td>TravelService：打开 durable store、创建/读取 trip、提交消息、watch 事件、transcript</td><td>系统的心脏</td></tr>
+            <tr><td><code>apps/server/src/harness/transcript.ts</code></td><td>pi entry → 共享 transcript（thinking / toolCalls / error）</td><td>历史恢复的源头</td></tr>
+            <tr><td><code>apps/server/src/agui/mapper.ts</code></td><td>PiEvent → AG-UI：reasoning、text、tool lifecycle、tool_progress、run_end</td><td>最需要小心的一层</td></tr>
+            <tr><td><code>apps/server/src/http/routes/agui.ts</code></td><td>挂 watcher、提交消息、写 SSE、RUN_STARTED / SNAPSHOT / RUN_FINISHED</td><td>协议入口</td></tr>
+            <tr><td><code>apps/server/src/http/routes/trips.ts</code></td><td>REST：列表、创建、快照、transcript、提交消息</td><td>刷新与验收的入口</td></tr>
+            <tr><td><code>apps/web/app/api/copilotkit/[[...slug]]/route.ts</code></td><td>per-trip CopilotKit runtime，Catch-all，GET/POST/PUT/DELETE</td><td>桥接层</td></tr>
+            <tr><td><code>apps/web/components/chat/</code></td><td>ChatPanel / ChatMessages / ReasoningBlock / ToolCallBlock</td><td>UI 分组与折叠</td></tr>
+            <tr><td><code>apps/web/lib/chat.ts</code></td><td>buildChatSegments、toolStatus、prettyJson、中文工具标签</td><td>纯函数，先读测试</td></tr>
+            <tr><td><code>apps/web/hooks/useTripSnapshot.ts</code></td><td>running 时 2 秒轮询 durable snapshot</td><td>计划卡刷新</td></tr>
+            <tr><td><code>apps/web/components/TripView.tsx</code></td><td>实时 state 与 durable snapshot 的合并、预算、研究进度、faults</td><td>页面编排</td></tr>
+            <tr><td><code>scripts/acceptance-live.ts</code> · <code>scripts/crash-resume.sh</code></td><td>15 分钟真实场景验收；SIGKILL 后恢复验收</td><td>改完核心路径后必跑</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <details>
+        <summary>深入：为什么 Next 运行时里要做一次结构性 cast？</summary>
+        <div class="details-body">
+          <p>
+            <code>@copilotkit/runtime</code> 与 <code>@copilotkit/shared</code> 各自打包了一份
+            <code>@ag-ui/client</code>。两边的 <code>HttpAgent</code> 类带有私有字段 <code>_debug</code>，
+            在 TypeScript 里是名义不兼容的，但运行时结构完全一致。于是 route 里用
+            <code>as unknown as ConstructorParameters&lt;typeof CopilotRuntime&gt;[0]</code>
+            只放宽这一处边界；升级依赖时应该优先消掉这个 cast，而不是继续扩散。
+          </p>
+        </div>
+      </details>
+    </section>
+
+    <section id="pitfalls">
+      <div class="section-head">
+        <span class="section-kicker">05 · Failure modes</span>
+        <h2>三个坑位，三段真实事件</h2>
+        <p class="section-intro">
+          这三处都曾经在真实流里出现，并且都有对应的回归测试。
+          切换标签看“症状 → 根因 → 现在的规则”。
+        </p>
+      </div>
+
+      <div class="pitfalls">
+        <div class="tabs" role="tablist" aria-label="常见失败模式">
+          <button role="tab" id="tab-reason" aria-selected="true" aria-controls="panel-reason" tabindex="0">思考重复</button>
+          <button role="tab" id="tab-tool" aria-selected="false" aria-controls="panel-tool" tabindex="-1">工具参数</button>
+          <button role="tab" id="tab-history" aria-selected="false" aria-controls="panel-history" tabindex="-1">历史空白</button>
+        </div>
+
+        <div class="tab-panel" role="tabpanel" id="panel-reason" aria-labelledby="tab-reason">
+          <h3>症状：回答下方又出现一遍完整思考</h3>
+          <p>
+            模型流结束后，<code>message_end</code> 回放完整 assistant content。
+            如果文本或工具调用已经把 reasoning span 关闭，旧的实现会新建一个 span 并把整段 thinking 再发一次。
+          </p>
+          <ol class="events">
+            <li><span class="dot reason"></span><div><b>thinking_start / thinking_delta</b> <span>→ REASONING_MESSAGE_START / CONTENT（“先想一下”）</span></div></li>
+            <li><span class="dot"></span><div><b>text_start</b> <span>→ 关闭 reasoning，REASONING_MESSAGE_END / REASONING_END</span></div></li>
+            <li><span class="dot bad"></span><div><b>message_end</b> <span>→ 旧实现：新建 span，再发一次“先想一下”</span></div></li>
+            <li class="guard"><span class="dot ok"></span><div><b>reasoningCovered()</b> <span>→ 已发送长度 ≥ 回放文本，直接跳过；重开 span 时携带 emitted，只补后缀</span></div></li>
+          </ol>
+          <p><strong>规则：</strong>同一个 contentIndex 的 thinking 块，已发送的内容永远不再发。空的 thinking 块不要新开 span。</p>
+        </div>
+
+        <div class="tab-panel" role="tabpanel" id="panel-tool" aria-labelledby="tab-tool" hidden>
+          <h3>症状：实时参数是 <code>{}</code>、片段或错误 JSON</h3>
+          <p>
+            部分 <code>message_start</code> / snapshot 已经带了一个 toolCall block，但参数还不完整；
+            <code>toolcall_delta</code> 带的是 <code>path</code> + 值片段（例如 <code>" 门票"</code>），不是 JSON。
+          </p>
+          <ol class="events">
+            <li><span class="dot"></span><div><b>message_start</b> <span>→ 旧实现：<code>TOOL_CALL_ARGS "{}"</code> + <code>TOOL_CALL_END</code>（过早）</span></div></li>
+            <li><span class="dot bad"></span><div><b>toolcall_delta</b> <span>→ 旧实现：把值片段直接拼到 JSON 字符串，得到非法参数</span></div></li>
+            <li><span class="dot ok"></span><div><b>message_end</b> <span>→ 权威 block.arguments：只发一次完整 JSON</span></div></li>
+            <li><span class="dot ok"></span><div><b>tool_execution_start</b> <span>→ 参数已发则只发 <code>TOOL_CALL_END</code>；未发则补发 ARGS + END</span></div></li>
+            <li><span class="dot"></span><div><b>tool_execution_end</b> <span>→ <code>TOOL_CALL_RESULT</code> + <code>metadata["travel.tool"]</code>（name / status / error / duration）</span></div></li>
+          </ol>
+          <p><strong>规则：</strong>只发权威 JSON；<code>END</code> 等执行开始或 <code>run_end</code>；END 之后绝不再发 ARGS。</p>
+        </div>
+
+        <div class="tab-panel" role="tabpanel" id="panel-history" aria-labelledby="tab-history" hidden>
+          <h3>症状：刷新后聊天空白，但计划卡还在更新</h3>
+          <p>
+            CopilotKit 连接瞬间会短暂暴露 1 条空 assistant 消息。旧的历史加载守卫是
+            <code>messages.length &gt; 0</code>，于是它把“占位消息”误判成“已有真实对话”，
+            再也不去取 transcript。
+          </p>
+          <ol class="events">
+            <li><span class="dot"></span><div><b>mount</b> <span>isAvailable=false → 不取历史</span></div></li>
+            <li><span class="dot bad"></span><div><b>isAvailable=true</b> <span>messages = [1 条空 assistant] → 旧守卫直接 return</span></div></li>
+            <li class="guard"><span class="dot ok"></span><div><b>hasRenderableHistory()</b> <span>只有 user / reasoning / 有内容的 assistant / tool 才算真实对话</span></div></li>
+            <li><span class="dot ok"></span><div><b>Promise.all</b> <span>getTranscript + getTrip；running 时每 2 秒轮询，结束后重取</span></div></li>
+          </ol>
+          <p><strong>规则：</strong>判“有没有对话”要看可渲染内容，不要看数组长度；刷新发生在 run 中途时，要等 run 结束再补一次 transcript。</p>
+        </div>
+      </div>
+
+      <h3>还有两个运行时坑</h3>
+      <div class="two-col">
+        <div>
+          <p><strong>“Cannot use a settled overlay”</strong></p>
+          <p>
+            不要从 <code>api.commit()</code> 里拿到 draft 后在 commit 外读取。搜索工具现在在 commit
+            内返回普通副本，并在提交后用新快照构造输出；真实 Harness/SQLite 集成测试覆盖了这条路径。
+          </p>
+        </div>
+        <div>
+          <p><strong>重启 API 后的首次发送</strong></p>
+          <p>
+            重启 Fastify 后，Next dev 进程可能还握着旧的 keep-alive 连接，首次 <code>agent/run</code>
+            会立刻结束。重启 API 时一并重启 Next dev，或先发一条短消息预热；这不是业务逻辑错误。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="run">
+      <div class="section-head">
+        <span class="section-kicker">06 · One real run</span>
+        <h2>从 brief 到预算：一条真实运行路径</h2>
+        <p class="section-intro">
+          下面是 trip <code>1761</code> 的真实结果。它验证了工具参数、计划卡、草图、预算和
+          finalize 在同一条链上闭环。注意：这次运行为了绕过上游余额问题使用了远端
+          Anthropic-compatible 端点，thinking 关闭；思考块本身由 magpie 的回归探针单独验证。
+        </p>
+      </div>
+
+      <ol class="timeline">
+        <li class="done">
+          <span class="marker">01</span>
+          <div class="step-title">浏览器发送 brief</div>
+          <div class="step-detail">“泰山玩三天，2026-10-26 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食。”</div>
+        </li>
+        <li class="done">
+          <span class="marker">02</span>
+          <div class="step-title">brief 写入 durable doc</div>
+          <div class="step-detail"><code>trip_update_brief</code> 合并字段，返回仍缺失的项；系统提示要求先补齐再研究。</div>
+        </li>
+        <li class="done">
+          <span class="marker">03</span>
+          <div class="step-title">研究：6 次搜索 / 15 次抓取</div>
+          <div class="step-detail">搜索自动抓取前 2 条高权威结果；每次抓取写入 sources，claim 必须带 source id 或标记 unverified。</div>
+        </li>
+        <li class="done">
+          <span class="marker">04</span>
+          <div class="step-title">Day 1 → sketch 1</div>
+          <div class="step-detail"><code>plan_emit_day</code> 写卡，<code>sketch_day</code> 生成 SVG；空卡或失败会重试。</div>
+        </li>
+        <li class="done">
+          <span class="marker">05</span>
+          <div class="step-title">Day 2 → sketch 2</div>
+          <div class="step-detail">重复的搜索结果走缓存；source 按新鲜度/权威度排序。</div>
+        </li>
+        <li class="done">
+          <span class="marker">06</span>
+          <div class="step-title">Day 3 → sketch 3</div>
+          <div class="step-detail">第 3 天 SVG 状态 <code>ok</code>，与前两天一致。</div>
+        </li>
+        <li class="done">
+          <span class="marker">07</span>
+          <div class="step-title">plan_finalize → 预算</div>
+          <div class="step-detail">计算 total range，检查 cap；over-budget 会要求改日卡。</div>
+        </li>
+        <li class="done">
+          <span class="marker">08</span>
+          <div class="step-title">UI 收束</div>
+          <div class="step-detail">3 张日程卡、三天 SVG 全 <code>ok</code>、73 条事实中 71 条有来源、7 条标记未验证；刷新恢复 1 用户 + 18 助手 + 21 工具消息。</div>
+        </li>
+      </ol>
+
+      <div class="budget" role="group" aria-label="预算范围">
+        <div class="budget-head">
+          <span class="budget-title">预算范围 / cap</span>
+          <span class="budget-value">¥1,861 – ¥2,598 · cap ¥3,000</span>
+        </div>
+        <div class="budget-track" aria-hidden="true">
+          <div class="budget-range"></div>
+          <div class="budget-cap"></div>
+        </div>
+        <div class="budget-labels"><span>¥0</span><span>low ¥1,861</span><span>high ¥2,598</span><span>cap ¥3,000</span></div>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="section-head">
+        <span class="section-kicker">07 · Start here</span>
+        <h2>开始工作的最小路径</h2>
+        <p class="section-intro">
+          跑起来 → 看一条真实运行 → 改一个小工具 → 跑验收。
+          不要一开始就读 mapper 的全部 700 行；先看测试里的输入/输出形状。
+        </p>
+      </div>
+
+      <h3>启动</h3>
+      <div class="command-block">
+        <button class="copy" type="button" data-copy="#cmd-dev">复制</button>
+        <pre id="cmd-dev"><code>export DEEPSEEK_API_KEY=...
+npm install
+npm run dev                      # Fastify :4000
+npm run dev --workspace @pi-demo/web   # Next :3000</code></pre>
+      </div>
+      <p>
+        默认走本地 magpie（<code>http://127.0.0.1:3425</code>，模型
+        <code>deepseek/deepseek-flash</code>）。<code>PI_THINKING_LEVEL=low</code>
+        会开启思考；设为 <code>off</code> 可关闭。若 magpie 不可用，可用
+        <code>MAGPIE_BASE_URL / MAGPIE_MODEL / MAGPIE_API_KEY / MAGPIE_MAX_TOKENS</code>
+        指向远端 Anthropic-compatible 端点。
+      </p>
+
+      <h3>测试与验收</h3>
+      <div class="command-block">
+        <button class="copy" type="button" data-copy="#cmd-test">复制</button>
+        <pre id="cmd-test"><code>npm test                                  # server + web + shared
+npx tsc -p apps/server
+npm run build --workspace @pi-demo/web
+npm run probe:thinking                    # magpie 是否真的返回 thinking
+npm run acceptance:live                   # 15 分钟真实场景
+npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
+      </div>
+
+      <h3>改一个工具时</h3>
+      <ol class="plain-list">
+        <li><strong>定义：</strong>在 <code>apps/server/src/agent/tools/</code> 用 <code>defineTool</code> 定义参数、执行和 replay 语义。</li>
+        <li><strong>注册：</strong>在 extension 里注册；更新系统提示，写清楚什么时候调用。</li>
+        <li><strong>输出：</strong>需要模型消费的内容放 <code>output</code>；需要 UI 消费的结构放 <code>structuredOutput</code>。</li>
+        <li><strong>durable：</strong>在 <code>api.commit()</code> 内完成读写；不要带 draft 出 commit。</li>
+        <li><strong>测试：</strong>加工具单测 + 一次真实 Harness/SQLite 集成测试；如果会发事件，补 mapper 测试和 <code>verifyEvents</code>。</li>
+      </ol>
+
+      <h3>改事件映射时</h3>
+      <ol class="plain-list">
+        <li>先写一个 mapper 单测，构造真实 pi-durable 形状（<code>changes</code>、<code>block</code>、<code>message_end</code>、<code>tool_execution_*</code>）。</li>
+        <li>如果新增/改变生命周期，更新 <code>mapper.protocol.test.ts</code>，让整段事件通过 <code>verifyEvents</code>。</li>
+        <li>确保 <code>run_end</code> 能关闭所有 reasoning / text / tool 实体；否则 <code>RUN_FINISHED</code> 会被拒绝。</li>
+        <li>如果改变 UI 可见内容，更新 <code>lib/chat.test.ts</code> 和 <code>ChatPanel.test.tsx</code>。</li>
+      </ol>
+
+      <div class="callout">
+        <span class="label">阅读顺序建议</span>
+        <p>
+          先读 <code>packages/shared/src/trip.ts</code> 建立数据形状 →
+          <code>harness/transcript.ts</code> 看历史怎么来 →
+          <code>agui/mapper.ts</code> 只看测试覆盖的 case →
+          <code>lib/chat.ts</code> 看 UI 怎么分组 →
+          <code>ChatPanel.tsx</code> 看发送/历史/滚动。最后再读 <code>service.ts</code> 的 durable 细节。
+        </p>
+      </div>
+
+      <h3>术语表</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>术语</th><th>在这里的含义</th></tr></thead>
+          <tbody>
+            <tr><td>Conversation</td><td>一个 trip 对应一个 pi-durable conversation；重启后仍存在。</td></tr>
+            <tr><td>Run</td><td>一次用户提交触发的生成周期；以 <code>run_start</code> / <code>run_end</code> 为边界。</td></tr>
+            <tr><td>Task</td><td>durable 的后台工作单元；生成任务失败会 park，工具任务失败不结束 run。</td></tr>
+            <tr><td>Entry / Transcript</td><td>pi-durable 的提交记录；转换为共享 <code>TranscriptEntry</code> 后用于历史和快照。</td></tr>
+            <tr><td>AG-UI</td><td>浏览器与 agent 之间的标准事件协议；有严格的生命周期校验。</td></tr>
+            <tr><td>Span</td><td>一个 reasoning 生命周期；<code>REASONING_START</code> 到 <code>REASONING_END</code>。</td></tr>
+            <tr><td>Claim</td><td>日程卡里的事实声明；必须带 source id 或标记 unverified。</td></tr>
+            <tr><td>Fault</td><td>被 park / 失败的 durable task 的用户可见提示。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="status">
+      <div class="section-head">
+        <span class="section-kicker">08 · Status</span>
+        <h2>现在的验证状态</h2>
+        <p class="section-intro">
+          这份页面对应分支 <code>taishan-agent</code> 在 2026-10-20 的状态。
+          数字来自实际运行，不是预算或估计。
+        </p>
+      </div>
+
+      <div class="status-strip">
+        <div class="status-cell"><b>106 + 1 skip</b><span>server tests</span></div>
+        <div class="status-cell"><b>52 / 52</b><span>web tests</span></div>
+        <div class="status-cell"><b>2 / 2</b><span>shared tests</span></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>检查</th><th>结果</th><th>证据</th></tr></thead>
+          <tbody>
+            <tr><td>TypeScript</td><td><span class="chip ok">通过</span></td><td><code>tsc --noEmit</code>（server + web）</td></tr>
+            <tr><td>生产构建</td><td><span class="chip ok">通过</span></td><td>Next 16.4.2，编译 9.7 min，TypeScript 3.1 min，3 个静态页</td></tr>
+            <tr><td>thinking 探针</td><td><span class="chip ok">supported</span></td><td>magpie + <code>deepseek/deepseek-flash</code>，level low</td></tr>
+            <tr><td>原始 SSE 协议</td><td><span class="chip ok">通过</span></td><td>21 个工具调用，20 个已结束，END 后无 ARGS，参数均为完整 JSON</td></tr>
+            <tr><td>完整 UI run</td><td><span class="chip ok">通过</span></td><td>3 张卡、三天 SVG ok、预算 withinBudget、finalize 完成</td></tr>
+            <tr><td>刷新恢复</td><td><span class="chip ok">通过</span></td><td>1 用户 + 18 助手 + 21 工具消息</td></tr>
+            <tr><td>Renderer 警告</td><td><span class="chip ok">无</span></td><td><code>useDefaultRenderTool({})</code> + <code>enableInspector=false</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>已知遗留</h3>
+      <ul class="plain-list">
+        <li>“思考中…”只在思考内容为空时显示，流式已有内容后不显示。</li>
+        <li>并发第二次提交可能继承上一次 run 的流（路由既有行为；聊天发送已禁用，day action 未禁用）。</li>
+        <li>模型拒绝 reasoning 参数时没有运行时降级。</li>
+        <li><code>travel.tool_progress</code> 的 <code>details</code> / <code>diagnostics</code> 未限长。</li>
+        <li>发送失败时输入框内容已被清空。</li>
+      </ul>
+
+      <div class="callout">
+        <span class="label">Provider 现状</span>
+        <p>
+          当前运行使用 magpie + thinking on。若 magpie 的 DeepSeek 余额再次耗尽，服务会快速结束
+          且没有助手输出；这不是 mapper 的问题。可用 <code>MAGPIE_*</code> 环境变量切到远端
+          Anthropic-compatible 端点（例如 DeepSeek <code>/anthropic</code>、<code>deepseek-chat</code>、
+          <code>max_tokens 8192</code>），但那条路径的 thinking 支持取决于上游。
+        </p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <span>泰山行程助手 · developer explainer · 2026-10-20</span>
+  <span>branch taishan-agent · 9 commits · 自测：http://localhost:3000</span>
+</footer>
+
+<button class="theme-toggle" type="button" id="theme-toggle" aria-label="切换明暗主题">切换主题</button>
+
+<script>
+(function () {
+  "use strict";
+
+  var root = document.documentElement;
+  var toggle = document.getElementById("theme-toggle");
+  var stored = null;
+  try { stored = localStorage.getItem("taishan-theme"); } catch (e) { stored = null; }
+  if (stored === "light" || stored === "dark") root.setAttribute("data-theme", stored);
+
+  function currentTheme() {
+    var attr = root.getAttribute("data-theme");
+    if (attr === "light" || attr === "dark") return attr;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function syncToggle() {
+    var theme = currentTheme();
+    toggle.textContent = theme === "dark" ? "浅色主题" : "深色主题";
+    toggle.setAttribute("aria-label", theme === "dark" ? "切换到浅色主题" : "切换到深色主题");
+  }
+
+  toggle.addEventListener("click", function () {
+    var next = currentTheme() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("taishan-theme", next); } catch (e) { /* private mode */ }
+    syncToggle();
+  });
+
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncToggle);
+  }
+  syncToggle();
+
+  /* Scenario switcher for the sequence figure. */
+  var figure = document.getElementById("seq-figure");
+  var caption = document.getElementById("scenario-caption");
+  var captions = {
+    send: "首次发送：agent/run 进入 Next runtime，HttpAgent 调 Fastify /agui；Fastify 先挂 watcher 再提交消息，随后写 RUN_STARTED、两个快照和实时事件。",
+    tools: "工具执行：pi-durable 调 DeepSeek search/fetch，tool_execution_update 变成 CUSTOM travel.tool_progress，end 变成 TOOL_CALL_RESULT。",
+    resume: "刷新恢复：浏览器并行取 durable snapshot 与 transcript；如果 run 仍在进行，每 2 秒轮询，结束后重新取 transcript。"
+  };
+
+  figure.querySelectorAll("[data-scenario]").forEach(function (button) {
+    if (button.tagName !== "BUTTON") return;
+    button.addEventListener("click", function () {
+      var scenario = button.getAttribute("data-scenario");
+      figure.setAttribute("data-scenario", scenario);
+      figure.querySelectorAll("button[data-scenario]").forEach(function (b) {
+        b.setAttribute("aria-pressed", b === button ? "true" : "false");
+      });
+      caption.textContent = captions[scenario] || captions.send;
+    });
+  });
+
+  /* Tabs: click + arrow keys. */
+  var tablist = document.querySelector('[role="tablist"]');
+  if (tablist) {
+    var tabs = Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'));
+
+    function selectTab(tab, focus) {
+      tabs.forEach(function (t) {
+        var selected = t === tab;
+        t.setAttribute("aria-selected", selected ? "true" : "false");
+        t.setAttribute("tabindex", selected ? "0" : "-1");
+        document.getElementById(t.getAttribute("aria-controls")).hidden = !selected;
+      });
+      if (focus) tab.focus();
+    }
+
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener("click", function () { selectTab(tab, false); });
+      tab.addEventListener("keydown", function (event) {
+        var next = null;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown") next = tabs[(index + 1) % tabs.length];
+        if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = tabs[(index - 1 + tabs.length) % tabs.length];
+        if (event.key === "Home") next = tabs[0];
+        if (event.key === "End") next = tabs[tabs.length - 1];
+        if (next) { event.preventDefault(); selectTab(next, true); }
+      });
+    });
+  }
+
+  /* Copy buttons. */
+  document.querySelectorAll("[data-copy]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var target = document.querySelector(button.getAttribute("data-copy"));
+      if (!target) return;
+      var text = target.innerText;
+      function done() {
+        var previous = button.textContent;
+        button.textContent = "已复制";
+        window.setTimeout(function () { button.textContent = previous; }, 1400);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { fallback(); });
+      } else {
+        fallback();
+      }
+      function fallback() {
+        var range = document.createRange();
+        range.selectNodeContents(target);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        try { document.execCommand("copy"); done(); } catch (e) { /* leave selection */ }
+      }
+    });
+  });
+
+  /* Scrollspy for the waypoint index. */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.index a[href^="#"]'));
+  var sections = links.map(function (link) { return document.querySelector(link.getAttribute("href")); }).filter(Boolean);
+  if ("IntersectionObserver" in window && sections.length) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (link) {
+          link.setAttribute("aria-current", link.getAttribute("href") === "#" + entry.target.id ? "true" : "false");
+        });
+      });
+    }, { rootMargin: "-20% 0px -65% 0px", threshold: 0 });
+    sections.forEach(function (section) { observer.observe(section); });
+  }
+})();
+</script>
+</body>
+</html>
