@@ -14,6 +14,16 @@ public static class SketchGenerator
         CancellationToken ct = default)
     {
         var prompt = BuildPrompt(day);
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("PITRAVEL_TEST_SVG_MODE"),
+                "invalid",
+                StringComparison.Ordinal))
+        {
+            return new SketchResult(
+                Placeholder.Build($"Day {day.DayIndex} · {day.Title}"),
+                "failed",
+                "PITRAVEL_TEST_SVG_MODE=invalid");
+        }
 
         var first = await AttemptAsync(generate, prompt, ct).ConfigureAwait(false);
         if (first.Ok)

@@ -110,4 +110,32 @@ public sealed class SketchGeneratorTests
         Assert.Contains("<rect", result.Svg, StringComparison.Ordinal);
         Assert.Contains("The previous response was rejected: provider 500", calls[1], StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task InvalidModeAlwaysReturnsPlaceholder()
+    {
+        const string validSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"10\" height=\"10\"/></svg>";
+        var previous = Environment.GetEnvironmentVariable("PITRAVEL_TEST_SVG_MODE");
+        Environment.SetEnvironmentVariable("PITRAVEL_TEST_SVG_MODE", "invalid");
+        try
+        {
+            var calls = 0;
+            var result = await SketchGenerator.GenerateAsync(
+                SampleDay(),
+                (_, _) =>
+                {
+                    calls++;
+                    return Task.FromResult(validSvg);
+                },
+                CancellationToken.None);
+
+            Assert.Equal(0, calls);
+            Assert.Equal("failed", result.Status);
+            Assert.Equal(Placeholder.Build("Day 1 · 红门"), result.Svg);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PITRAVEL_TEST_SVG_MODE", previous);
+        }
+    }
 }

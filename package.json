@@ -34,6 +34,7 @@
     "typecheck": "npm run typecheck --workspace @pi-demo/server && npm run typecheck --workspace @pi-demo/shared && npm run typecheck --workspace @pi-demo/web",
     "acceptance:live": "tsx scripts/acceptance-live.ts",
     "acceptance:crash": "bash scripts/crash-resume.sh",
+    "acceptance:e2e": "dotnet run --project tools/PiTravel.Acceptance -- --scenario all",
     "probe:thinking": "tsx scripts/probe-thinking.ts"
   },
   "keywords": [

@@ -15,5 +15,6 @@ apps/web/AGENTS.md
 coverage/
 test-results/
 playwright-report/
+/artifacts/
 .DS_Store
 Thumbs.db
