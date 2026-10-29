@@ -20,7 +20,7 @@ using DurableHarness = Pi.Durable.Harness.Harness;
 /// Durable conversation and document facade for trips, mirroring
 /// <c>apps/server/src/harness/service.ts</c>.
 /// </summary>
-public sealed class TravelService
+public class TravelService
 {
     internal const string DefaultPlannerInstructions = """
         You are a meticulous travel planner. Work only from the brief, the recorded sources, and your tools.
@@ -63,6 +63,11 @@ public sealed class TravelService
     private readonly string _instructions;
     private readonly HashSet<string> _upgradedThinkingTrips = [];
     private readonly SemaphoreSlim _thinkingGate = new(1, 1);
+
+    protected TravelService()
+        : this(null!, null!, null!, ThinkingLevel.Off, static () => DateTimeOffset.Now, "")
+    {
+    }
 
     private TravelService(
         HarnessImpl harness,
@@ -155,7 +160,7 @@ public sealed class TravelService
             options.Instructions ?? DefaultPlannerInstructions);
     }
 
-    public async Task<TripIndexEntry> CreateTripAsync(
+    public virtual async Task<TripIndexEntry> CreateTripAsync(
         CreateTripInput input,
         CancellationToken ct = default)
     {
@@ -235,10 +240,10 @@ public sealed class TravelService
         return entry;
     }
 
-    public Task<IReadOnlyList<TripIndexEntry>> ListTripsAsync(CancellationToken ct = default) =>
+    public virtual Task<IReadOnlyList<TripIndexEntry>> ListTripsAsync(CancellationToken ct = default) =>
         _index.ListAsync(ct);
 
-    public async Task<TripSnapshot> GetSnapshotAsync(
+    public virtual async Task<TripSnapshot> GetSnapshotAsync(
         string tripId,
         CancellationToken ct = default)
     {
@@ -271,7 +276,7 @@ public sealed class TravelService
         };
     }
 
-    public async Task<string> SubmitMessageAsync(
+    public virtual async Task<string> SubmitMessageAsync(
         string tripId,
         string content,
         string requestId,
@@ -290,7 +295,7 @@ public sealed class TravelService
         return submission.Id.Value.ToString(CultureInfo.InvariantCulture);
     }
 
-    public async Task<IReadOnlyList<TranscriptEntry>> GetTranscriptAsync(
+    public virtual async Task<IReadOnlyList<TranscriptEntry>> GetTranscriptAsync(
         string tripId,
         CancellationToken ct = default)
     {
@@ -307,7 +312,7 @@ public sealed class TravelService
         }
     }
 
-    public async IAsyncEnumerable<AgentEvent> WatchEventsAsync(
+    public virtual async IAsyncEnumerable<AgentEvent> WatchEventsAsync(
         string tripId,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -372,7 +377,7 @@ public sealed class TravelService
         }
     }
 
-    public async Task RecordFaultAsync(
+    public virtual async Task RecordFaultAsync(
         string tripId,
         TripFault fault,
         CancellationToken ct = default)
@@ -391,7 +396,7 @@ public sealed class TravelService
             ctx);
     }
 
-    public async Task ClearFaultsAsync(
+    public virtual async Task ClearFaultsAsync(
         string tripId,
         CancellationToken ct = default)
     {
@@ -407,7 +412,7 @@ public sealed class TravelService
             ctx);
     }
 
-    public Task CloseAsync(CancellationToken ct = default)
+    public virtual Task CloseAsync(CancellationToken ct = default)
     {
         var ctx = ContextSignals.WithAbortSignal(ct, Context.Background);
         return _harness.CloseAsync(ctx);
