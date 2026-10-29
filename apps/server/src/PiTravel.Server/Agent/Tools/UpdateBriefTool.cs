@@ -18,7 +18,7 @@ public sealed class UpdateBriefTool : IToolRegistration
 
     private static readonly ToolSchema ValidationSchema = BuildSchema(includeArrayItems: false);
 
-    private readonly AsyncLocal<int> _validationReads = new();
+    private readonly AsyncLocal<bool> _validating = new();
     private readonly TravelDeps _deps;
 
     public UpdateBriefTool(TravelDeps deps) => _deps = deps;
@@ -28,19 +28,7 @@ public sealed class UpdateBriefTool : IToolRegistration
     public string Description =>
         "Merge new or corrected trip requirements into the durable trip brief.";
 
-    public ToolSchema Parameters
-    {
-        get
-        {
-            if (_validationReads.Value > 0)
-            {
-                _validationReads.Value--;
-                return ValidationSchema;
-            }
-
-            return Schema;
-        }
-    }
+    public ToolSchema Parameters => _validating.Value ? ValidationSchema : Schema;
 
     public string? Replay => "safe";
 
@@ -50,7 +38,12 @@ public sealed class UpdateBriefTool : IToolRegistration
 
     public object? PrepareArguments(object args)
     {
-        _validationReads.Value = 2;
+        // ToolTask.Validate walks array `items` schemas and crashes on the
+        // resulting self-assignment (see the report), so validation reads the
+        // items-less schema. The flag is re-armed here on every call, so a
+        // validation failure that never reaches ExecuteAsync cannot leak the
+        // stripped schema into the next call's model declaration.
+        _validating.Value = true;
         return args;
     }
 
@@ -59,7 +52,7 @@ public sealed class UpdateBriefTool : IToolRegistration
         IToolExecutionApi api,
         Context context)
     {
-        _validationReads.Value = 0;
+        _validating.Value = false;
         var patch = ReadArgs<TripBrief>(args);
 
         var missing = await api.CommitAsync(

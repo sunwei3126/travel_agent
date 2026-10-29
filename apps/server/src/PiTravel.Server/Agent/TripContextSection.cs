@@ -181,6 +181,55 @@ public static class TripContextSection
          brief.Constraints is not null ||
          brief.Assumptions is not null);
 
-    private static string FormatNumber(double value) =>
-        value.ToString(CultureInfo.InvariantCulture);
+    /// <summary>
+    /// JavaScript's <c>String(n)</c>: plain decimal between 1e-6 and 1e21 exclusive,
+    /// otherwise exponential with a lowercase <c>e</c> and a sign only on a positive
+    /// exponent (<c>"1e+21"</c>, <c>"1e-7"</c>, <c>"0.000001"</c>).
+    /// </summary>
+    public static string FormatNumber(double value)
+    {
+        if (double.IsNaN(value)) return "NaN";
+        if (double.IsPositiveInfinity(value)) return "Infinity";
+        if (double.IsNegativeInfinity(value)) return "-Infinity";
+
+        var magnitude = Math.Abs(value);
+        // "R" yields the shortest round-trip digits, the same digits JS prints;
+        // only the notation has to be adapted to String(n).
+        var shortest = value.ToString("R", CultureInfo.InvariantCulture);
+        if (magnitude is 0 or >= 1e-6 and < 1e21)
+        {
+            return shortest.Contains('E') ? ExpandExponent(shortest) : shortest;
+        }
+
+        var exponentAt = shortest.IndexOf('E');
+        var mantissa = shortest[..exponentAt];
+        var exponent = int.Parse(shortest[(exponentAt + 1)..], CultureInfo.InvariantCulture);
+        return exponent >= 0
+            ? $"{mantissa}e+{exponent}"
+            : $"{mantissa}e{exponent}";
+    }
+
+    /// <summary>Rewrites <c>1.234E+17</c> as <c>123400000000000000</c>.</summary>
+    private static string ExpandExponent(string value)
+    {
+        var exponentAt = value.IndexOf('E');
+        var mantissa = value[..exponentAt];
+        var exponent = int.Parse(value[(exponentAt + 1)..], CultureInfo.InvariantCulture);
+
+        var sign = mantissa.StartsWith('-') ? "-" : "";
+        if (sign.Length > 0) mantissa = mantissa[1..];
+
+        var pointAt = mantissa.IndexOf('.');
+        var digits = pointAt < 0 ? mantissa : mantissa.Remove(pointAt, 1);
+        var integerDigits = (pointAt < 0 ? mantissa.Length : pointAt) + exponent;
+
+        if (integerDigits <= 0)
+        {
+            return $"{sign}0.{new string('0', -integerDigits)}{digits}";
+        }
+
+        return digits.Length <= integerDigits
+            ? $"{sign}{digits}{new string('0', integerDigits - digits.Length)}"
+            : $"{sign}{digits[..integerDigits]}.{digits[integerDigits..]}";
+    }
 }

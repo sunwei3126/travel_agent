@@ -194,11 +194,11 @@ public sealed class AgentPureTests
         ToolCaps.EnforceCap(39, 40, "search");
         var searchEx = Assert.Throws<InvalidOperationException>(() =>
             ToolCaps.EnforceCap(40, 40, "search"));
-        Assert.Contains("search cap reached (40/40)", searchEx.Message);
+        Assert.Equal("search cap reached", searchEx.Message);
 
         var fetchEx = Assert.Throws<InvalidOperationException>(() =>
             ToolCaps.EnforceCap(30, 30, "fetch"));
-        Assert.Contains("fetch cap reached (30/30)", fetchEx.Message);
+        Assert.Equal("fetch cap reached", fetchEx.Message);
     }
 
     [Fact]
@@ -222,6 +222,24 @@ public sealed class AgentPureTests
         Assert.Contains("Targeted edits and cascades", Prompts.PlannerInstructions);
         Assert.Contains("changes only that day", Prompts.PlannerInstructions);
     }
+
+    [Theory]
+    [InlineData(1e21, "1e+21")]
+    [InlineData(1e20, "100000000000000000000")]
+    [InlineData(1e-6, "0.000001")]
+    [InlineData(1e-7, "1e-7")]
+    [InlineData(3000, "3000")]
+    [InlineData(1.5, "1.5")]
+    [InlineData(-1e21, "-1e+21")]
+    [InlineData(-1e-7, "-1e-7")]
+    [InlineData(0.1, "0.1")]
+    [InlineData(0.30000000000000004, "0.30000000000000004")]
+    [InlineData(123456789.12345679, "123456789.12345679")]
+    [InlineData(9.999999e-7, "9.999999e-7")]
+    [InlineData(123456789012345680d, "123456789012345680")]
+    [InlineData(0, "0")]
+    public void FormatNumberMatchesJavaScriptString(double value, string expected) =>
+        Assert.Equal(expected, TripContextSection.FormatNumber(value));
 
     private static TripSource MakeSource(
         string id,

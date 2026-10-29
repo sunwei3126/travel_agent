@@ -13,7 +13,7 @@ public static class ToolCaps
     {
         if (count >= cap)
         {
-            throw new InvalidOperationException($"{kind} cap reached ({count}/{cap})");
+            throw new InvalidOperationException($"{kind} cap reached");
         }
     }
 }

@@ -32,7 +32,7 @@ public sealed class EmitDayTool : IToolRegistration
 
     private static readonly ToolSchema ValidationSchema = BuildSchema(includeArrayItems: false);
 
-    private readonly AsyncLocal<int> _validationReads = new();
+    private readonly AsyncLocal<bool> _validating = new();
     private readonly TravelDeps _deps;
 
     public EmitDayTool(TravelDeps deps) => _deps = deps;
@@ -41,19 +41,7 @@ public sealed class EmitDayTool : IToolRegistration
 
     public string Description => "Write or replace one day card in the durable trip plan.";
 
-    public ToolSchema Parameters
-    {
-        get
-        {
-            if (_validationReads.Value > 0)
-            {
-                _validationReads.Value--;
-                return ValidationSchema;
-            }
-
-            return Schema;
-        }
-    }
+    public ToolSchema Parameters => _validating.Value ? ValidationSchema : Schema;
 
     public string? Replay => "safe";
 
@@ -63,7 +51,9 @@ public sealed class EmitDayTool : IToolRegistration
 
     public object? PrepareArguments(object args)
     {
-        _validationReads.Value = 2;
+        // See UpdateBriefTool: validation reads the items-less schema, and the
+        // flag is re-armed per call so a failed validation cannot leak it.
+        _validating.Value = true;
         return args;
     }
 
@@ -72,7 +62,7 @@ public sealed class EmitDayTool : IToolRegistration
         IToolExecutionApi api,
         Context context)
     {
-        _validationReads.Value = 0;
+        _validating.Value = false;
         var parsed = UpdateBriefTool.ReadArgs<EmitDayArgs>(args);
         var now = _deps.Now();
 

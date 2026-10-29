@@ -224,7 +224,7 @@ public sealed class AgentToolsTests
         var ex = await Assert.ThrowsAnyAsync<Exception>(() =>
             tool.ExecuteAsync(new { query = "泰山 门票" }, env.Api, Ctx));
 
-        Assert.Contains("search cap reached (40/40)", ex.Message);
+        Assert.Equal("search cap reached", ex.Message);
         Assert.Equal(0, handler.SearchCalls);
     }
 
@@ -246,7 +246,7 @@ public sealed class AgentToolsTests
         var ex = await Assert.ThrowsAnyAsync<Exception>(() =>
             tool.ExecuteAsync(new { url = targetUrl }, env.Api, Ctx));
 
-        Assert.Contains("fetch cap reached (30/30)", ex.Message);
+        Assert.Equal("fetch cap reached", ex.Message);
         Assert.Equal(0, handler.FetchCalls);
     }
 
@@ -328,6 +328,169 @@ public sealed class AgentToolsTests
             Ctx);
 
         Assert.Equal("Brief is complete.", Text.ContentText(completeResult.Content!));
+    }
+
+    [Fact]
+    public async Task ValidationFlagIsReArmedPerCallAndIsolationKeepsTheDeclarationFull()
+    {
+        await using var env = await ToolTestEnv.CreateAsync();
+        await env.SeedBriefAsync(new TripBrief { Destination = "泰山" });
+        var tool = new UpdateBriefTool(env.Deps);
+
+        string Declaration() => JsonSerializer.Serialize(
+            Pi.Durable.Harness.Prompt.DeclarationOf(tool).Parameters.JsonSchema);
+        string Parameters() => JsonSerializer.Serialize(tool.Parameters.JsonSchema);
+
+        // Steady state: the model declaration carries the full items schema.
+        Assert.Contains("\"items\":{\"type\":\"string\"}", Declaration());
+
+        // A call whose validation fails settles without reaching ExecuteAsync.
+        // Its flow sees the stripped schema, and cannot change this flow's view.
+        await Task.Run(() =>
+        {
+            tool.PrepareArguments(new Dictionary<string, object?> { ["startDate"] = "2026-02-30" });
+            Assert.DoesNotContain("\"items\"", Parameters());
+        });
+        Assert.Contains("\"items\":{\"type\":\"string\"}", Declaration());
+
+        // A fresh call re-arms the flag instead of depending on the failed call
+        // clearing it, so both of the framework's validation reads are stripped,
+        // and the call itself still completes.
+        var valid = new Dictionary<string, object?>
+        {
+            ["origin"] = "上海虹桥",
+            ["interests"] = new[] { "登山" },
+        };
+        await Task.Run(async () =>
+        {
+            tool.PrepareArguments(valid);
+            Assert.DoesNotContain("\"items\"", Parameters());
+            Assert.DoesNotContain("\"items\"", Parameters());
+
+            var result = await tool.ExecuteAsync(valid, env.Api, Ctx);
+            Assert.Contains("Missing brief fields:", Text.ContentText(result.Content!));
+        });
+
+        // Validation state never escapes the call's own flow, so the model
+        // declaration is the full schema in the steady state.
+        Assert.Contains("\"items\":{\"type\":\"string\"}", Declaration());
+    }
+
+    [Fact]
+    public async Task FailedValidationKeepsTheFullSchemaForTheNextDeclaration()
+    {
+        var deps = new TravelDeps(
+            () => FixedNow,
+            new DeepSeekClient(new HttpClient(new RoutingHttpHandler()), "test-key"),
+            (_, _) => Task.FromResult(new SketchResult("<svg viewBox=\"0 0 100 100\"/>", "ok")));
+        var extension = new TravelExtension(deps);
+        var tool = extension.Tools.Single(registered => registered.Name == "trip_update_brief");
+
+        var faux = Faux.CreateProvider();
+        var model = faux.GetModel(null)!;
+        var models = new Models();
+        models.SetProvider(faux.Provider);
+        var registry = Registry.CreateRegistry();
+        registry.Install(Define.Extension(extension));
+
+        var harness = await DurableHarness.OpenAsync(
+            new MemoryStorage(),
+            new HarnessOptions { Models = models, Registry = registry },
+            Ctx);
+        try
+        {
+            var conversation = await harness.CreateConversationAsync(
+                new ConversationCreateOptions
+                {
+                    Ownership = new ConversationOwnership.Ownerless(),
+                    Agent = new AgentChange { Model = new ModelRef(model.Provider, model.Id) },
+                },
+                Ctx);
+            await conversation.CommitAsync(
+                async tx =>
+                {
+                    Docs.Write(
+                        await tx.DocAsync(Docs.TripBriefDoc, conversation.Id),
+                        new TripBrief { Destination = "泰山" });
+                    return true;
+                },
+                Ctx);
+
+            // The framework validates before ExecuteAsync; a rejection settles the
+            // call without ever reaching it, which is where a counter would leak.
+            faux.SetResponses(
+            [
+                Faux.Response.ToolUse(
+                    Faux.ToolCall(
+                        "trip_update_brief",
+                        new Dictionary<string, object?> { ["startDate"] = "2026-02-30" },
+                        "call-invalid")),
+                Faux.Response.ToolUse(
+                    Faux.ToolCall(
+                        "trip_update_brief",
+                        new Dictionary<string, object?>
+                        {
+                            ["origin"] = "上海虹桥",
+                            ["interests"] = new[] { "登山" },
+                        },
+                        "call-valid")),
+                Faux.Response.Text("done"),
+            ]);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var stream = await Events.WatchEventsAsync(harness, conversation.Id, Ctx);
+            var runEnded = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            stream.Start((batch, _) =>
+            {
+                if (batch.OfType<AgentEvent.RunEnd>().Any())
+                {
+                    runEnded.TrySetResult();
+                }
+
+                return Task.CompletedTask;
+            });
+            await conversation.SubmitAsync(
+                new SubmissionDraft.Input { Content = [new TextContent("更新行程")] },
+                Ctx);
+            await runEnded.Task.WaitAsync(cts.Token);
+            await stream.StopAsync();
+
+            var watch = await conversation.WatchAsync(Ctx);
+            try
+            {
+                var results = watch.Value.Entries
+                    .Select(entry => entry.Model?.FirstOrDefault())
+                    .OfType<ToolResultMessage>()
+                    .ToList();
+                Assert.Equal(2, results.Count);
+                Assert.Contains(
+                    "real calendar date",
+                    Text.ContentText(results[0].Content!));
+                Assert.Contains(
+                    "Missing brief fields:",
+                    Text.ContentText(results[1].Content!));
+            }
+            finally
+            {
+                await watch.Stop();
+            }
+
+            var brief = Docs.ReadBrief(
+                await harness.SnapshotAsync(Docs.TripBriefDoc, conversation.Id, Ctx));
+            Assert.Equal("上海虹桥", brief.Origin);
+            Assert.Null(brief.StartDate);
+
+            // After the rejected call the model declaration must still carry the
+            // full items schema, not the stripped one used only while validating.
+            var declared = JsonSerializer.Serialize(
+                Pi.Durable.Harness.Prompt.DeclarationOf(tool).Parameters.JsonSchema);
+            Assert.Contains("\"items\":{\"type\":\"string\"}", declared);
+        }
+        finally
+        {
+            await harness.CloseAsync(Ctx);
+        }
     }
 
     [Fact]
