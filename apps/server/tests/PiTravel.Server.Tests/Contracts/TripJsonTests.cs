@@ -124,6 +124,27 @@ public sealed class TripJsonTests
         Assert.Equal(json, JsonSerializer.Serialize(roundTripped, TripJson.Options));
     }
 
+    [Fact]
+    public void TripStateSerializesRunningInsideResearch()
+    {
+        var state = new TripState
+        {
+            Brief = new TripBrief { Destination = "泰安" },
+            Plan = new TripPlan { Days = [] },
+            Sources = new Dictionary<string, TripSource>(),
+            Research = new TripResearchState { SearchCount = 0, FetchCount = 0, Running = false },
+        };
+
+        var json = JsonSerializer.Serialize(state, TripJson.Options);
+        var root = JsonNode.Parse(json)!.AsObject();
+
+        Assert.False(root.ContainsKey("running"));
+        var research = root["research"]!.AsObject();
+        Assert.Equal(0, research["searchCount"]!.GetValue<int>());
+        Assert.Equal(0, research["fetchCount"]!.GetValue<int>());
+        Assert.False(research["running"]!.GetValue<bool>());
+    }
+
     private static TripSnapshot SampleSnapshot() => new()
     {
         Trip = new TripIndexEntry

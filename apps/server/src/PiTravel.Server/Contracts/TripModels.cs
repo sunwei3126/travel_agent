@@ -126,12 +126,21 @@ public sealed record TripIndexEntry
 /// Completed API call counts. The attempt maps are keyed by normalized search cache
 /// key / fetched URL and are only written once a call has been committed.
 /// </summary>
-public sealed record TripResearch
+public record TripResearch
 {
     public required int SearchCount { get; init; }
     public required int FetchCount { get; init; }
     public IReadOnlyDictionary<string, int>? SearchAttempts { get; init; }
     public IReadOnlyDictionary<string, int>? FetchAttempts { get; init; }
+}
+
+/// <summary>
+/// <see cref="TripResearch"/> plus the live run flag. This is the <c>research</c>
+/// object of the AG-UI state snapshot, so <c>running</c> serializes inside it.
+/// </summary>
+public sealed record TripResearchState : TripResearch
+{
+    public required bool Running { get; init; }
 }
 
 /// <summary>A parked or faulted background task surfaced to the user.</summary>
@@ -144,17 +153,15 @@ public sealed record TripFault
 }
 
 /// <summary>
-/// The read model the AG-UI state snapshot is built from. <see cref="Running"/> is
-/// carried beside the research counters here and flattened into
-/// <c>research.running</c> on the wire.
+/// The AG-UI state snapshot payload; <see cref="Research"/> carries the live run
+/// flag, so the type serializes to the shared <c>TripState</c> shape directly.
 /// </summary>
 public sealed record TripState
 {
     public required TripBrief Brief { get; init; }
     public required TripPlan Plan { get; init; }
     public required IReadOnlyDictionary<string, TripSource> Sources { get; init; }
-    public required TripResearch Research { get; init; }
-    public required bool Running { get; init; }
+    public required TripResearchState Research { get; init; }
 }
 
 /// <summary>The full trip snapshot served to the UI; <see cref="Faults"/> is optional.</summary>
