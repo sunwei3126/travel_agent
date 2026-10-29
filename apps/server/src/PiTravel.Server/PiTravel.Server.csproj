@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pi.Agent" Version="1.4.5" />
+    <PackageReference Include="Pi.Ai" Version="1.4.5" />
+    <PackageReference Include="Pi.Durable" Version="1.4.5" />
+  </ItemGroup>
+
+</Project>
