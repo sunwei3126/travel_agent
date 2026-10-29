@@ -1,4 +1,5 @@
 using PiTravel.Server.Contracts;
+using PiTravel.Server.Research;
 
 namespace PiTravel.Server.Planning;
 
@@ -72,7 +73,7 @@ public static class DayCardValidator
                 {
                     errors.Add($"claim references unknown source: {id}");
                 }
-                else if (source.FetchedAt is null)
+                else if (!Freshness.IsVerifiedFact(source))
                 {
                     // A search snippet is only a lead. Hard facts require the fetched page.
                     errors.Add(
