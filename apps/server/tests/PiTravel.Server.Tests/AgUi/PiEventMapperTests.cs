@@ -696,7 +696,6 @@ public sealed class PiEventMapperTests
         var fallback = Assert.IsType<ToolCallResult>(Assert.Single(empty));
         Assert.Equal("工具执行失败或未返回结果", fallback.Content);
         Assert.Equal("工具执行失败或未返回结果", fallback.Metadata.TravelTool.Error);
-        Assert.Equal("tool-result-tc2", fallback.MessageId is "10" ? "tool-result-tc2" : fallback.MessageId);
         Assert.Equal("10", fallback.MessageId);
     }
 
@@ -724,8 +723,9 @@ public sealed class PiEventMapperTests
             ToolName = "deepseek_search",
             Output = new AgentEvent.ToolOutputChange { TrimStart = 1, Append = "Z" },
         });
-        // No trace exists, but the progress text is still remembered across updates.
-        Assert.Equal("bcZ", ((ToolProgressValue)((CustomEvent)trimmed[0]).Value).Output);
+        // No trace was started, so the earlier output was discarded and this update
+        // is computed from empty.
+        Assert.Equal("Z", ((ToolProgressValue)((CustomEvent)trimmed[0]).Value).Output);
 
         mapper.Map(new AgentEvent.ToolExecutionStart
         {
@@ -746,6 +746,29 @@ public sealed class PiEventMapperTests
             Output = new AgentEvent.ToolOutputChange { TrimStart = 2, Append = "Z" },
         });
         Assert.Equal("cdZ", ((ToolProgressValue)((CustomEvent)shifted[0]).Value).Output);
+
+        var negative = mapper.Map(new AgentEvent.ToolExecutionUpdate
+        {
+            ToolCallId = "tc1",
+            ToolName = "deepseek_search",
+            Output = new AgentEvent.ToolOutputChange { TrimStart = -5, Append = "!" },
+        });
+        // A negative trim is clamped to 0, so the remembered output is kept whole.
+        Assert.Equal("cdZ!", ((ToolProgressValue)((CustomEvent)negative[0]).Value).Output);
+    }
+
+    [Fact]
+    public void EmptyGenerationFaultUsesTheSameFallbackForTheBannerAndTheRunError()
+    {
+        var events = new PiEventMapper().Map(new AgentEvent.TaskFailed
+        {
+            TaskId = TaskId<object?>.From(3),
+            Kind = "pi.generation",
+            Message = "",
+        });
+
+        Assert.Equal("Task failed", ((TaskFailedValue)((CustomEvent)events[0]).Value).Message);
+        Assert.Equal("Task failed", ((RunError)events[1]).Message);
     }
 
     [Fact]

@@ -179,15 +179,11 @@ public sealed class PiEventMapper
 
     private void MapToolExecutionUpdate(AgentEvent.ToolExecutionUpdate toolUpdate, List<AgUiEvent> mapped)
     {
-        if (!_tools.TryGetValue(toolUpdate.ToolCallId, out var trace))
-        {
-            // Progress can arrive for a call this run never started. Remember it so
-            // later trim/append updates still apply to the text already emitted.
-            trace = new ToolTrace(toolUpdate.ToolCallId, toolUpdate.ToolName);
-            _tools[toolUpdate.ToolCallId] = trace;
-        }
-
-        var text = trace.Output;
+        // A late attach sees progress for a call that is already running, so no
+        // trace exists. Compute each update from empty and discard it, matching the
+        // TS mapper, which only writes the result back when a trace already exists.
+        _tools.TryGetValue(toolUpdate.ToolCallId, out var trace);
+        var text = trace?.Output ?? "";
         var output = toolUpdate.Output;
         if (output?.Set is { } set)
         {
@@ -195,19 +191,19 @@ public sealed class PiEventMapper
         }
         else if (output is not null)
         {
-            var trimStart = output.TrimStart ?? 0;
-            if (trimStart > 0) text = text[Math.Min((int)trimStart, text.Length)..];
+            var trimStart = (int)Math.Clamp(output.TrimStart ?? 0, 0, int.MaxValue);
+            if (trimStart > 0) text = text[Math.Min(trimStart, text.Length)..];
             if (output.Append is { } append) text += append;
         }
 
         if (text.Length > ProgressCap) text = text[^ProgressCap..];
-        trace.Output = text;
+        if (trace is not null) trace.Output = text;
 
         mapped.Add(new CustomEvent(
             "travel.tool_progress",
             new ToolProgressValue(
                 toolUpdate.ToolCallId,
-                trace.Name,
+                trace?.Name ?? toolUpdate.ToolName,
                 "running",
                 text,
                 toolUpdate.Details,
@@ -223,11 +219,14 @@ public sealed class PiEventMapper
         var content = result is null ? "" : Text.ContentText(result.Content);
         if (content.Length == 0 && isError) content = "工具执行失败或未返回结果";
         var name = trace?.Name ?? toolEnd.ToolName;
+        // The fallback keys off the entry id alone, not off whether the entry carries
+        // a tool result. EntryId is a struct, so a missing id arrives as 0.
+        var entryId = toolEnd.Entry?.Id.Value;
 
         mapped.Add(new ToolCallResult(
-            result is null
-                ? $"tool-result-{toolEnd.ToolCallId}"
-                : toolEnd.Entry.Id.Value.ToString(CultureInfo.InvariantCulture),
+            entryId is > 0
+                ? entryId.Value.ToString(CultureInfo.InvariantCulture)
+                : $"tool-result-{toolEnd.ToolCallId}",
             toolEnd.ToolCallId,
             content,
             new AgUiMetadata(new TravelToolMetadata(
@@ -238,19 +237,19 @@ public sealed class PiEventMapper
     }
 
     private static ToolResultMessage? ToolResult(AgentEvent.ToolExecutionEnd toolEnd) =>
-        toolEnd.Entry.Model is [ToolResultMessage result, ..] ? result : null;
+        toolEnd.Entry?.Model is [ToolResultMessage result, ..] ? result : null;
 
     private void MapTaskFailed(AgentEvent.TaskFailed taskFailed, List<AgUiEvent> mapped)
     {
         var code = taskFailed.Kind;
-        var message = taskFailed.Message;
+        var message = string.IsNullOrEmpty(taskFailed.Message) ? "Task failed" : taskFailed.Message;
         // A generation task owns the run, so its fault also ends the run; a failed
         // tool task does not, and the model may retry the tool.
         mapped.Add(new CustomEvent(
             "travel.task_failed",
             new TaskFailedValue(
                 string.IsNullOrEmpty(code) ? "unknown" : code,
-                string.IsNullOrEmpty(message) ? "Task failed" : message,
+                message,
                 taskFailed.TaskId.Value.ToString(CultureInfo.InvariantCulture))));
         if (code is not (null or "" or "pi.generation")) return;
 
