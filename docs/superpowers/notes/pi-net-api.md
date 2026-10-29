@@ -300,3 +300,29 @@ var modelRef = new ModelRef(model.Provider, model.Id);   // ("faux", "faux-1")
 
 结论：**提交、重放、watch、checkpoint 的语义没有漂移**；有影响的是观察面 API 的改名/迁移（第 1、2 条）
 与 crash-loop guard（第 5 条）。
+
+## 13. 已知上游缺陷：数组参数校验必然崩溃（1.4.5）
+
+`Pi.Ai.Utils.Validation.ApplyArrayCoercion`（`src/Pi.Ai/Utils/Validation.cs:243-257`）这样写：
+
+```csharp
+if (schema["items"] is JsonObject items)
+{
+    for (var index = 0; index < value.Count; index++) value[index] = Convert(value[index], items);
+}
+```
+
+`Convert` 在值无需转换时**原样返回同一个节点**（`Validation.cs:174-201`），而该节点此时已经挂在这个
+`JsonArray` 上。`JsonArray[index] = <已有父节点的节点>` 会抛
+`InvalidOperationException: The node already has a parent`。
+
+后果：**任何在 schema 里声明了 `items` 的数组参数，只要实参数组非空就会在校验阶段崩溃**，与参数内容
+是否合法无关。pi.net 自带的 `EditTool` 同样中招，所以这不是本项目的用法问题。
+
+本项目的规避（`Agent/Tools/UpdateBriefTool.cs`、`EmitDayTool.cs`）：同一工具暴露两套 schema ——
+`Parameters` 在「校验中」返回去掉 `items` 的 schema（数组只声明 `type` + `description`，元素形状由
+`ExecuteAsync` 里的强类型反序列化与 `DayCardValidator` 兜底），在模型声明路径返回完整 schema，保证
+模型看到的工具声明与 TS 版一致。切换由 `PrepareArguments` 置位、`ExecuteAsync` 开头清除。
+
+上游修复后，这段可以整体删掉，两套 schema 合并成一套。上报地址：
+<https://github.com/AIDotNet/pi.net/issues>。
