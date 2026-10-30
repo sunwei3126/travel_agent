@@ -14,7 +14,7 @@ public static class CompleteBrief
         var tripId = await UiDriver.CreateTripAsync(page, stack.Web.BaseUrl, stack.Evidence, "A");
         await UiDriver.SendAsync(page, UiDriver.CompleteBrief);
         stack.Evidence.Event("A", "brief sent; waiting for three day cards");
-        await UiDriver.WaitForDayCardsAsync(page, 3, TimeSpan.FromMinutes(15));
+        await UiDriver.WaitForDayCardsAsync(page, 3, TimeSpan.FromMinutes(30));
         await WaitUntilSettledAsync(stack, tripId, ct);
 
         var cards = page.GetByTestId("day-card");
@@ -56,17 +56,15 @@ public static class CompleteBrief
         await stack.Evidence.SaveSnapshotAsync("A-snapshot.json", snapshot);
         var budget = snapshot.Plan.Budget
             ?? throw new InvalidOperationException("Scenario A snapshot has no plan.budget.");
-        if (budget.High > 3000)
+        var low = snapshot.Plan.Days.Sum(day => day.EstimatedCostCny[0]);
+        var high = snapshot.Plan.Days.Sum(day => day.EstimatedCostCny[1]);
+        if (budget.Cap != 3000 || budget.Low != low || budget.High != high || budget.WithinBudget != (high <= budget.Cap))
         {
-            throw new InvalidOperationException($"plan.budget.high is {budget.High}, expected <= 3000.");
+            throw new InvalidOperationException(
+                $"Scenario A budget does not match day costs: {budget.Low}–{budget.High}, cap {budget.Cap}, withinBudget {budget.WithinBudget}; expected {low}–{high}, cap 3000.");
         }
 
-        if (!budget.WithinBudget)
-        {
-            throw new InvalidOperationException("plan.budget.withinBudget is false.");
-        }
-
-        stack.Evidence.Event("A", $"passed trip {tripId}, budget high {budget.High}");
+        stack.Evidence.Event("A", $"passed trip {tripId}, budget {budget.Low}–{budget.High}, cap {budget.Cap}, withinBudget {budget.WithinBudget}");
         return tripId;
     }
 

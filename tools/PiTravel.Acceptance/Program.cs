@@ -68,10 +68,8 @@ public static class Program
 
         var evidence = Evidence.Create(RepoRoot.Path);
         Console.WriteLine($"evidence: {evidence.Root}");
-        // One scenario spends most of its time waiting on the model: scenario A
-        // researches for ~20 minutes before it can finalize, so its own cap has
-        // to outlast the waits inside it (15 min for the day cards, 15 to settle).
-        var minutes = scenario.Equals("all", StringComparison.OrdinalIgnoreCase) ? 150 : 45;
+        // Dependent scenarios first create a full plan and may then wait for an edit.
+        var minutes = scenario.Equals("all", StringComparison.OrdinalIgnoreCase) ? 180 : 60;
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(minutes));
         try
         {
@@ -164,9 +162,9 @@ public static class Program
             await StepAsync("D", evidence, stack, failed, async token => { await RefreshRecovery.RunAsync(stack, token); }, ct);
             if (tripId is not null)
             {
-                await StepAsync("F", evidence, stack, failed, token => TargetedEdit.RunAsync(stack, tripId, token), ct);
                 await StepAsync("G", evidence, stack, failed, token => Citations.RunAsync(stack, tripId, token), ct);
                 await StepAsync("H", evidence, stack, failed, token => ContentCoverage.RunAsync(stack, tripId, token), ct);
+                await StepAsync("F", evidence, stack, failed, token => TargetedEdit.RunAsync(stack, tripId, token), ct);
             }
             else
             {

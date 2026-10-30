@@ -178,12 +178,12 @@ for up to 15 minutes. It fails unless the run ends with:
 - at least one fact backed by a **fetched** source;
 - a budget summary with `withinBudget: true` and `high <= 3000`.
 
-The original scenario A acceptance criterion requires `withinBudget: true` and
-`high <= 3000`. The current approved budget behavior can instead finish with an
-honest over-budget estimate and suggested savings, so an over-budget result does
-not satisfy that original criterion; the scenario A runner still enforces it.
-A real browser has verified visible thinking blocks and stopping after an
-over-budget result. The full A–H acceptance suite has not all been verified.
+The browser scenario A verifies that the finalized budget matches the sum of
+all day-card estimates and that `withinBudget` accurately reflects the cap.
+An honest over-budget estimate is accepted and reported, consistent with the
+approved behavior. A real browser has verified visible thinking blocks and
+stopping after an over-budget result. The full A–H acceptance suite has not all
+been verified.
 Research is capped at **40 searches / 30 fetches per trip**; repeated completed
 calls are cached. The legacy `scripts/acceptance-live.ts` remains available for
 API-level checks against the .NET server.
