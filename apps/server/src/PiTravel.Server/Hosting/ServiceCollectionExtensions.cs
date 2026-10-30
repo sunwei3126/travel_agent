@@ -27,7 +27,7 @@ public static class ServiceCollectionExtensions
         var requested = Enum.TryParse<ThinkingLevel>(config.ThinkingLevel, ignoreCase: true, out var parsed)
             ? parsed
             : ThinkingLevel.Low;
-        var clamped = ThinkingLevels.Clamp(model, requested.ToString());
+        var clamped = ThinkingLevels.Clamp(model, requested.ToString().ToLowerInvariant());
         var thinkingLevel = Enum.Parse<ThinkingLevel>(clamped, ignoreCase: true);
 
         var registry = Registry.CreateRegistry();
@@ -67,9 +67,13 @@ public static class ServiceCollectionExtensions
             Id = "magpie",
             Name = "Magpie",
             BaseUrl = config.MagpieBaseUrl,
+            // Magpie accepts any local key, and a remote Anthropic-compatible
+            // endpoint gets its real key through the model's x-api-key header.
+            // The auth only has to resolve: an empty env list resolves to nothing,
+            // which the harness reports as "Provider is not configured".
             Auth = new ProviderAuth
             {
-                ApiKey = new EnvApiKeyAuth("Magpie", []),
+                ApiKey = new EnvApiKeyAuth("Magpie", ["MAGPIE_API_KEY"]),
             },
             Models = [model],
             Api = LazyApis.AnthropicMessagesApi(),

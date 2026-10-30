@@ -1,3 +1,5 @@
+using PiTravel.Server.Contracts;
+
 namespace PiTravel.Server.Hosting.Endpoints;
 
 /// <summary>
@@ -11,5 +13,5 @@ internal static class NotFound
         || error.Message.StartsWith("Conversation not found:", StringComparison.Ordinal);
 
     public static IResult Result(Exception error) =>
-        Results.Json(new { error = error.Message }, statusCode: StatusCodes.Status404NotFound);
+        Results.Json(new { error = error.Message }, TripJson.Options, statusCode: StatusCodes.Status404NotFound);
 }

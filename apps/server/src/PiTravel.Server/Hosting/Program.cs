@@ -23,6 +23,15 @@ public class Program
     /// </summary>
     public static IHostBuilder CreateHostBuilder(string[] args)
     {
+        // The magpie auth resolves only from MAGPIE_API_KEY. The local proxy
+        // accepts any key, so publish the default when nothing was configured;
+        // an explicit value still wins. Without this the harness reports
+        // "Provider is not configured" on the first model call.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MAGPIE_API_KEY")))
+        {
+            Environment.SetEnvironmentVariable("MAGPIE_API_KEY", "magpie");
+        }
+
         var config = ServerConfig.FromEnvironment(ReadEnvironment());
         var urls = UrlFromArgs(args) ?? config.Urls;
         return Host.CreateDefaultBuilder(args)

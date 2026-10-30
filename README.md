@@ -31,7 +31,8 @@ plans survive refreshes and server restarts.
   SQLite. A restarted server resumes an in-flight run; a refreshed browser
   restores the transcript.
 - **Budget-aware.** `plan_finalize` sums day-card ranges against the brief cap;
-  over-budget plans are flagged and revised.
+  when the plan is over budget, the agent reports the overage and feasible
+  savings, then stops rather than repeatedly revising to force it under budget.
 
 ## Architecture
 
@@ -43,7 +44,7 @@ flowchart LR
   subgraph Next["Next.js :3000"]
     RT["CopilotKit runtime<br/>/api/copilotkit/[[...slug]]"]
   end
-  subgraph Server["Fastify :4000"]
+  subgraph Server["ASP.NET Core :4000"]
     AGUI["/agui SSE<br/>AG-UI mapper"]
     SVC["TravelService"]
   end
@@ -73,6 +74,7 @@ The original design record (Chinese) is in
 ## Requirements
 
 - **Node.js 22.22** (see `.nvmrc`; npm 10+)
+- **.NET 10 SDK**
 - **An Anthropic Messages-compatible model endpoint.** The development default
   is a local magpie gateway at `http://127.0.0.1:3425`; any compatible endpoint
   works through `MAGPIE_*`.
@@ -85,7 +87,7 @@ The original design record (Chinese) is in
 nvm use            # or install Node 22.22 yourself
 npm ci
 
-# Terminal 1: Fastify API
+# Terminal 1: ASP.NET Core API
 export DEEPSEEK_API_KEY=...
 export PI_THINKING_LEVEL=low
 npm run dev:server
@@ -98,7 +100,7 @@ Open <http://localhost:3000>, create a trip, and send a request such as:
 
 > 泰山玩三天，2026-10-26 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食。
 
-The server reads `process.env` directly and does **not** auto-load a root
+The server reads environment variables directly and does **not** auto-load a root
 `.env` file. Export variables in each terminal (or use a process manager).
 `.env.example` documents every variable.
 
@@ -120,7 +122,7 @@ API_URL=http://127.0.0.1:4000 AGENT_URL=http://127.0.0.1:4000/agui npm run start
 | `DEEPSEEK_API_KEY` | server | — | **Required at startup.** Used by Search/Fetch. |
 | `DEEPSEEK_BASE_URL` | server | `https://api.deepseek.com` | Research API base. |
 | `PORT` | server | `4000` | Crash script defaults to `4100`. |
-| `DATA_DIR` | server | `./data` | Relative to the server process cwd (`apps/server` via the workspace script). SQLite is single-process. |
+| `DATA_DIR` | server | `./data` | Relative to the server process working directory (the repository root when using root scripts). SQLite is single-process. |
 | `MAGPIE_BASE_URL` | server | `http://127.0.0.1:3425` | Any Anthropic Messages-compatible endpoint. |
 | `MAGPIE_MODEL` | server | `deepseek/deepseek-flash` | Must match the endpoint’s model id. |
 | `MAGPIE_API_KEY` | server | `magpie` | Sent as `x-api-key`; a local magpie accepts any value. |
@@ -129,20 +131,23 @@ API_URL=http://127.0.0.1:4000 AGENT_URL=http://127.0.0.1:4000/agui npm run start
 | `API_URL` | Next config, scripts | `http://127.0.0.1:4000` | Target of the `/backend` rewrite; acceptance API base. |
 | `NEXT_PUBLIC_API_URL` | browser code | `/backend` | Inlined at build time; an absolute value may need CORS. |
 | `AGENT_URL` | Next CopilotKit route | `http://127.0.0.1:4000/agui` | Must be reachable from the Next server. |
+| `PITRAVEL_TEST_SVG_MODE` | server | unset | Acceptance only: `invalid` forces SVG placeholder fallback. |
 | `MAGPIE_LIVE` | tests | unset | Set `1` to run the live provider test. |
 
 ## Scripts
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev:server` | Fastify with watch mode (`tsx watch`). |
+| `npm run dev:server` | ASP.NET Core server in watch mode. |
+| `npm run start:server` | Run the ASP.NET Core server. |
 | `npm run dev:web` | Next.js dev server. |
 | `npm run build` | Production Next.js build. |
-| `npm run typecheck` | Server + shared + web (`next typegen` runs first). |
-| `npm test` | Server, web, and shared tests. |
-| `npm run probe:thinking` | Ask the model endpoint whether it returns thinking blocks (exit `0` yes, `2` no). |
+| `npm run typecheck` | Shared + web (`next typegen` runs first). |
+| `npm test` | Web and shared tests. |
+| `npm run test:server` / `dotnet test apps/server` | .NET server tests. |
+| `npm run acceptance:e2e` | Browser-driven .NET acceptance scenarios. |
 | `npm run acceptance:live` | End-to-end scenario against a running server. |
-| `npm run acceptance:crash` | Start a server, `SIGKILL` it mid-research, restart, verify resume. |
+| `npm run acceptance:crash` | Browser-driven .NET crash recovery scenario. |
 
 ## Testing and acceptance
 
@@ -152,14 +157,15 @@ Credential-free checks (what CI runs):
 npm ci
 npm run typecheck
 npm test
+dotnet test apps/server
 npm run build
 ```
 
 Live checks (require a model endpoint and `DEEPSEEK_API_KEY`):
 
 ```bash
-npm run probe:thinking
 npm run acceptance:live
+npm run acceptance:e2e
 ```
 
 `acceptance:live` creates a trip, submits a brief whose start date defaults to
@@ -172,10 +178,15 @@ for up to 15 minutes. It fails unless the run ends with:
 - at least one fact backed by a **fetched** source;
 - a budget summary with `withinBudget: true` and `high <= 3000`.
 
+The original scenario A acceptance criterion requires `withinBudget: true` and
+`high <= 3000`. The current approved budget behavior can instead finish with an
+honest over-budget estimate and suggested savings, so an over-budget result does
+not satisfy that original criterion; the scenario A runner still enforces it.
+A real browser has verified visible thinking blocks and stopping after an
+over-budget result. The full A–H acceptance suite has not all been verified.
 Research is capped at **40 searches / 30 fetches per trip**; repeated completed
-calls are cached. `acceptance:crash` starts its own server on port `4100`,
-kills it after research begins, restarts against the same durable store, and
-verifies the run resumes without repeating completed work.
+calls are cached. The legacy `scripts/acceptance-live.ts` remains available for
+API-level checks against the .NET server.
 
 Validation split: `plan_emit_day` checks brief completeness, source existence,
 fetched status, and cost ranges. `plan_finalize` only sums the day-card ranges
@@ -189,10 +200,12 @@ and sets `withinBudget`.
 | `apps/web/app/api/copilotkit/` | Per-trip CopilotKit runtime bridging AG-UI. |
 | `apps/web/components/chat/` | ChatPanel, ReasoningBlock, ToolCallBlock. |
 | `apps/web/lib/chat.ts` | Pure grouping/status/format helpers. |
-| `apps/server/` | Fastify API, AG-UI mapper, TravelService. |
-| `apps/server/src/agent/` | System prompt, six tools, extension registration. |
-| `apps/server/src/harness/` | Durable conversations, transcript shaping, event watching. |
-| `apps/server/src/agui/mapper.ts` | Pi events → AG-UI reasoning/text/tool lifecycle. |
+| `apps/server/src/PiTravel.Server/` | ASP.NET Core API, AG-UI mapper, and travel service. |
+| `apps/server/src/PiTravel.Server/Agent/` | System prompt and travel tools. |
+| `apps/server/src/PiTravel.Server/Harness/` | Durable conversations and transcripts. |
+| `apps/server/src/PiTravel.Server/AgUi/` | Pi events mapped to AG-UI events. |
+| `apps/server/tests/` | .NET server tests. |
+| `tools/PiTravel.Acceptance/` | Browser-driven acceptance runner. |
 | `packages/shared/` | Trip, plan, source, and transcript types. |
 | `scripts/` | Live and crash-resume acceptance scripts. |
 | `docs/design/` | Original design record. |

@@ -32,25 +32,51 @@ public sealed class WebHost : IAsyncDisposable
 
     public static WebHost Create(Evidence evidence, string apiBase)
     {
-        var built = File.Exists(Path.Combine(RepoRoot.Path, "apps", "web", ".next", "BUILD_ID"));
+        // The production build. `next dev` recompiles each route on first hit, and
+        // on a slow disk that compile runs for minutes, so the UI never settles in
+        // time. The build bakes the /backend rewrite to http://127.0.0.1:4000, which
+        // is why the acceptance server is pinned to that port.
+        var buildDir = Path.Combine(RepoRoot.Path, "apps", "web", ".next");
+        var built = File.Exists(Path.Combine(buildDir, "BUILD_ID"));
+        if (built)
+        {
+            var manifestPath = Path.Combine(buildDir, "routes-manifest.json");
+            if (!File.Exists(manifestPath))
+                throw new InvalidOperationException("Production web build has no routes manifest; cannot verify its backend rewrite.");
+            using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var rewrites = manifest.RootElement.GetProperty("rewrites");
+            var rules = rewrites.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? rewrites.EnumerateArray().ToArray()
+                : rewrites.EnumerateObject().SelectMany(group => group.Value.EnumerateArray().ToArray()).ToArray();
+            var destinations = rules.Where(rule => rule.TryGetProperty("source", out var source)
+                    && source.GetString() == "/backend/:path*")
+                .Select(rule => rule.GetProperty("destination").GetString()).ToArray();
+            var expected = $"{apiBase.TrimEnd('/')}/:path*";
+            if (destinations.Length != 1 || destinations[0] != expected)
+                throw new InvalidOperationException($"Production web backend rewrite does not match acceptance server {expected}; rebuild the web app with API_URL={apiBase}.");
+        }
         return new WebHost(evidence, FreePort(), apiBase, built ? "start:web" : "dev:web");
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
+        // Drive Next.js through its own bin with `node` rather than `npm run`. On
+        // Windows, npm.cmd locates npm relative to the working directory and fails
+        // wherever the repo has no copy of npm installed.
         var psi = new ProcessStartInfo
         {
-            FileName = "npm",
-            WorkingDirectory = RepoRoot.Path,
+            FileName = "node",
+            WorkingDirectory = Path.Combine(RepoRoot.Path, "apps", "web"),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add(Path.Combine(RepoRoot.Path, "node_modules", "next", "dist", "bin", "next"));
         psi.ArgumentList.Add(Mode == "start:web" ? "start" : "dev");
-        psi.ArgumentList.Add("--workspace");
-        psi.ArgumentList.Add("@pi-demo/web");
-        psi.ArgumentList.Add("--");
+        // `next dev` takes the project directory as a positional argument and
+        // otherwise uses the process's current directory, which is the repo root
+        // when the runner is launched from there — where there is no app/.
+        psi.ArgumentList.Add(Path.Combine(RepoRoot.Path, "apps", "web"));
         psi.ArgumentList.Add("--port");
         psi.ArgumentList.Add(Port.ToString());
         psi.ArgumentList.Add("--hostname");
@@ -91,7 +117,9 @@ public sealed class WebHost : IAsyncDisposable
     private async Task WaitForPageAsync(CancellationToken ct)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(3);
+        // The first `next dev` compile of the home page is cold and, on a slow
+        // disk, runs well past three minutes. Later requests are fast.
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(6);
         while (DateTimeOffset.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();

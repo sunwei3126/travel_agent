@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using PiTravel.Server.Artifacts;
 using PiTravel.Acceptance.Infrastructure;
 using PiTravel.Server.Contracts;
 
@@ -163,10 +164,6 @@ public static class CrashResume
         await UiDriver.SendAsync(page, UiDriver.CompleteBrief);
         stack.Evidence.Event("C", "waiting for research to start");
         var before = await WaitForResearchAsync(stack, tripId, ct);
-        var searchKeys = Keys(before.Research.SearchAttempts);
-        var fetchKeys = Keys(before.Research.FetchAttempts);
-        var searchDone = Sum(before.Research.SearchAttempts);
-        var fetchDone = Sum(before.Research.FetchAttempts);
         await stack.Evidence.SaveSnapshotAsync("C-before.json", before);
 
         stack.Server.Kill();
@@ -175,48 +172,29 @@ public static class CrashResume
         await page.ReloadAsync(new() { WaitUntil = WaitUntilState.NetworkIdle });
         await page.GetByLabel("旅行助手").WaitForAsync();
 
-        var resumed = false;
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(3);
+        TripSnapshot? after = null;
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(15);
         while (DateTimeOffset.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
             var snapshot = await stack.Api.GetTripAsync(tripId, ct);
-            if (snapshot.Running || await UiDriver.IsBusyAsync(page) || snapshot.Plan.Days.Count > before.Plan.Days.Count)
+            if (!snapshot.Running && snapshot.Plan.Days.Count >= 3)
             {
-                resumed = true;
+                after = snapshot;
                 break;
             }
-
-            await Task.Delay(1_000, ct);
+            await Task.Delay(2_000, ct);
         }
 
-        if (!resumed)
-        {
-            stack.Evidence.Event(
-                "C",
-                "restarted run did not resume; pi.net parks a repeatedly killed task until RetryTaskAsync()");
-            throw new InvalidOperationException(
-                "Restarted run did not resume. pi.net 1.4.5 parks a killed task until RetryTaskAsync() is called.");
-        }
+        if (after is null)
+            throw new TimeoutException("Restarted run did not complete with three day cards.");
 
-        var after = await stack.Api.GetTripAsync(tripId, ct);
         await stack.Evidence.SaveSnapshotAsync("C-after.json", after);
-        var lostSearch = searchKeys.Except(Keys(after.Research.SearchAttempts)).ToArray();
-        var lostFetch = fetchKeys.Except(Keys(after.Research.FetchAttempts)).ToArray();
-        if (lostSearch.Length > 0 || lostFetch.Length > 0)
-        {
-            throw new InvalidOperationException(
-                $"Attempt keys were lost. search=[{string.Join(",", lostSearch)}] fetch=[{string.Join(",", lostFetch)}]");
-        }
-
-        if (Sum(after.Research.SearchAttempts) > searchDone || Sum(after.Research.FetchAttempts) > fetchDone)
-        {
-            throw new InvalidOperationException(
-                $"Completed attempt counts grew (search {searchDone}->{Sum(after.Research.SearchAttempts)}, fetch {fetchDone}->{Sum(after.Research.FetchAttempts)}).");
-        }
-
+        CheckAttempts("search", before.Research.SearchAttempts, after.Research.SearchAttempts);
+        CheckAttempts("fetch", before.Research.FetchAttempts, after.Research.FetchAttempts);
+        await UiDriver.WaitForDayCardsAsync(page, 3, TimeSpan.FromMinutes(1));
         await page.ScreenshotAsync(new() { Path = Path.Combine(stack.Evidence.Root, "C-resumed.png"), FullPage = true });
-        stack.Evidence.Event("C", "passed; run resumed and completed attempts did not grow");
+        stack.Evidence.Event("C", "passed; run completed and committed attempts were not repeated");
     }
 
     private static async Task<TripSnapshot> WaitForResearchAsync(Stack stack, string tripId, CancellationToken ct)
@@ -227,7 +205,7 @@ public static class CrashResume
             ct.ThrowIfCancellationRequested();
             var snapshot = await stack.Api.GetTripAsync(tripId, ct);
             var attempts = (snapshot.Research.SearchAttempts?.Count ?? 0) + (snapshot.Research.FetchAttempts?.Count ?? 0);
-            if (attempts > 0)
+            if (snapshot.Running && attempts > 0 && snapshot.Plan.Days.Count < 3)
             {
                 return snapshot;
             }
@@ -238,11 +216,20 @@ public static class CrashResume
         throw new TimeoutException("Research did not start.");
     }
 
-    private static HashSet<string> Keys(IReadOnlyDictionary<string, int>? attempts) =>
-        attempts is null ? [] : attempts.Keys.ToHashSet(StringComparer.Ordinal);
-
-    private static int Sum(IReadOnlyDictionary<string, int>? attempts) =>
-        attempts?.Values.Sum() ?? 0;
+    private static void CheckAttempts(string kind, IReadOnlyDictionary<string, int>? before, IReadOnlyDictionary<string, int>? after)
+    {
+        foreach (var (key, count) in before ?? new Dictionary<string, int>())
+        {
+            var actual = after is not null && after.TryGetValue(key, out var value) ? value : -1;
+            if (actual != count)
+                throw new InvalidOperationException($"Committed {kind} attempt {key} changed after restart (before {count}, after {actual}).");
+        }
+        foreach (var (key, count) in after ?? new Dictionary<string, int>())
+        {
+            if ((before is null || !before.ContainsKey(key)) && count > 1)
+                throw new InvalidOperationException($"New {kind} attempt {key} was committed {count} times.");
+        }
+    }
 }
 
 /// <summary>D: reloading mid-run keeps the chat rows and day-card count.</summary>
@@ -253,49 +240,54 @@ public static class RefreshRecovery
         var page = stack.Browser.Page;
         var tripId = await UiDriver.CreateTripAsync(page, stack.Web.BaseUrl, stack.Evidence, "D");
         await UiDriver.SendAsync(page, UiDriver.CompleteBrief);
-        stack.Evidence.Event("D", "waiting for the first chat row or card");
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(8);
+        stack.Evidence.Event("D", "waiting for a card during the active run");
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(15);
+        TripSnapshot? before = null;
         while (DateTimeOffset.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            if (await page.Locator(".chat-message").CountAsync() > 0 || await page.GetByTestId("day-card").CountAsync() > 0)
+            var current = await stack.Api.GetTripAsync(tripId, ct);
+            if (current.Running && current.Plan.Days.Count > 0
+                && await page.GetByTestId("day-card").CountAsync() > 0
+                && await page.Locator(".chat-message-user").CountAsync() > 0)
             {
+                before = current;
                 break;
             }
-
             await Task.Delay(1_000, ct);
         }
+        if (before is null) throw new TimeoutException("No rendered card appeared during the active run.");
 
-        var rows = await page.Locator(".chat-message").CountAsync();
-        var cards = await page.GetByTestId("day-card").CountAsync();
-        stack.Evidence.Event("D", $"before reload rows={rows} cards={cards}");
+        var userText = await page.Locator(".chat-message-user").First.InnerTextAsync();
+        var assistantTexts = (await page.Locator(".chat-message-assistant .chat-bubble").AllInnerTextsAsync())
+            .Where(text => !string.IsNullOrWhiteSpace(text)).ToArray();
+        var blockTitles = (await page.Locator(".day-card .day-block strong").AllInnerTextsAsync())
+            .Where(text => !string.IsNullOrWhiteSpace(text)).ToArray();
+        var titles = before.Plan.Days.Select(day => day.Title).ToArray();
+        await stack.Evidence.SaveSnapshotAsync("D-before.json", before);
         await page.ReloadAsync(new() { WaitUntil = WaitUntilState.NetworkIdle });
         await page.GetByLabel("旅行助手").WaitForAsync();
-        var settle = DateTimeOffset.UtcNow.AddSeconds(30);
-        var rowsAfter = 0;
-        var cardsAfter = 0;
-        while (DateTimeOffset.UtcNow < settle)
-        {
-            rowsAfter = await page.Locator(".chat-message").CountAsync();
-            cardsAfter = await page.GetByTestId("day-card").CountAsync();
-            if (rowsAfter >= rows && cardsAfter >= cards)
-            {
-                break;
-            }
+        await page.GetByText(userText, new() { Exact = true }).First.WaitForAsync(new() { Timeout = 60_000 });
+        foreach (var text in assistantTexts)
+            await page.Locator(".chat-message-assistant .chat-bubble").Filter(new() { HasText = text })
+                .First.WaitForAsync(new() { Timeout = 60_000 });
+        foreach (var title in titles)
+            await page.GetByTestId("day-card").GetByRole(AriaRole.Heading, new() { Name = title, Exact = true })
+                .First.WaitForAsync(new() { Timeout = 60_000 });
+        foreach (var title in blockTitles)
+            await page.Locator(".day-card .day-block strong").Filter(new() { HasText = title })
+                .First.WaitForAsync(new() { Timeout = 60_000 });
 
-            await Task.Delay(1_000, ct);
-        }
-
-        if (rowsAfter != rows || cardsAfter != cards)
-        {
-            throw new InvalidOperationException(
-                $"Reload changed the UI. rows {rows}->{rowsAfter}, cards {cards}->{cardsAfter}.");
-        }
-
-        await page.ScreenshotAsync(new() { Path = Path.Combine(stack.Evidence.Root, "D-reloaded.png"), FullPage = true });
         var snapshot = await stack.Api.GetTripAsync(tripId, ct);
+        foreach (var day in before.Plan.Days)
+        {
+            var restored = snapshot.Plan.Days.FirstOrDefault(item => item.DayIndex == day.DayIndex);
+            if (restored is null || restored.Title != day.Title)
+                throw new InvalidOperationException($"Day {day.DayIndex} was lost or changed during refresh.");
+        }
+        await page.ScreenshotAsync(new() { Path = Path.Combine(stack.Evidence.Root, "D-reloaded.png"), FullPage = true });
         await stack.Evidence.SaveSnapshotAsync("D-snapshot.json", snapshot);
-        stack.Evidence.Event("D", "passed; rows and cards match");
+        stack.Evidence.Event("D", "passed; user message and existing card titles restored");
     }
 }
 
@@ -314,7 +306,7 @@ public static class SvgFallback
         {
             ct.ThrowIfCancellationRequested();
             var snapshot = await stack.Api.GetTripAsync(tripId, ct);
-            if (snapshot.Plan.Days.Any(day => day.SvgStatus == "failed"))
+            if (!snapshot.Running && snapshot.Plan.Days.Any(day => day.SvgStatus == "failed"))
             {
                 failed = snapshot;
                 break;
@@ -328,16 +320,56 @@ public static class SvgFallback
             throw new TimeoutException("No day card reached svgStatus failed.");
         }
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "重画" }).First.WaitForAsync(new() { Timeout = 60_000 });
-        var placeholder = await page.Locator("img.day-card-svg").First.GetAttributeAsync("src");
-        if (placeholder is null || !placeholder.StartsWith("data:image/svg+xml", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Failed card is not showing an SVG image.");
-        }
+        var day = failed.Plan.Days.First(item => item.SvgStatus == "failed");
+        var expected = Placeholder.Build($"Day {day.DayIndex} · {day.Title}");
+        if (day.Svg != expected) throw new InvalidOperationException("Failed sketch is not the expected placeholder.");
+        var card = page.GetByTestId("day-card").Filter(new() { Has = page.GetByRole(AriaRole.Heading, new() { Name = day.Title, Exact = true }) });
+        var redraw = card.GetByRole(AriaRole.Button, new() { Name = "重画" });
+        await redraw.WaitForAsync(new() { Timeout = 60_000 });
+        var src = await card.Locator("img.day-card-svg").GetAttributeAsync("src");
+        var expectedSrc = "data:image/svg+xml;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(expected));
+        if (src != expectedSrc) throw new InvalidOperationException("Rendered SVG does not match the failed card's placeholder.");
 
         await page.ScreenshotAsync(new() { Path = Path.Combine(stack.Evidence.Root, "E-placeholder.png"), FullPage = true });
         await stack.Evidence.SaveSnapshotAsync("E-snapshot.json", failed);
-        stack.Evidence.Event("E", "passed; placeholder is shown and 重画 is usable");
+        var request = $"请重画第 {day.DayIndex} 天的草图，其他天不要动。";
+        var priorTranscript = await stack.Api.GetTranscriptAsync(tripId, ct);
+        var priorIds = priorTranscript.EnumerateArray().Select(entry => entry.GetProperty("id").GetString()).ToHashSet();
+        var prior = await page.GetByText(request, new() { Exact = true }).CountAsync();
+        await redraw.ClickAsync();
+        await page.GetByText(request, new() { Exact = true }).Nth(prior).WaitForAsync(new() { Timeout = 60_000 });
+        var redrawDeadline = DateTimeOffset.UtcNow.AddMinutes(15);
+        DayCard? redrawn = null;
+        while (DateTimeOffset.UtcNow < redrawDeadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var transcript = await stack.Api.GetTranscriptAsync(tripId, ct);
+            var entries = transcript.EnumerateArray().ToArray();
+            var callIds = entries.Where(entry => !priorIds.Contains(entry.GetProperty("id").GetString())
+                    && entry.TryGetProperty("toolCalls", out var calls) && calls.ValueKind == System.Text.Json.JsonValueKind.Array)
+                .SelectMany(entry => entry.GetProperty("toolCalls").EnumerateArray().ToArray())
+                .Where(call => call.GetProperty("function").GetProperty("name").GetString() == "sketch_day")
+                .Where(call => System.Text.Json.JsonDocument.Parse(call.GetProperty("function").GetProperty("arguments").GetString()!).RootElement
+                    .GetProperty("dayIndex").GetInt32() == day.DayIndex)
+                .Select(call => call.GetProperty("id").GetString()).ToHashSet();
+            var completed = entries.Any(entry => entry.TryGetProperty("toolCallId", out var id)
+                && callIds.Contains(id.GetString()) && entry.GetProperty("role").GetString() == "tool"
+                && (!entry.TryGetProperty("error", out var error) || error.ValueKind == System.Text.Json.JsonValueKind.Null)
+                && entry.GetProperty("content").GetString() == $"Sketch for day {day.DayIndex} is failed.");
+            var current = await stack.Api.GetTripAsync(tripId, ct);
+            if (completed && !current.Running)
+            {
+                redrawn = current.Plan.Days.FirstOrDefault(item => item.DayIndex == day.DayIndex);
+                await stack.Evidence.SaveSnapshotAsync("E-redrawn.json", current);
+                await stack.Evidence.SaveJsonAsync("E-redraw-transcript.json", transcript);
+                break;
+            }
+            await Task.Delay(2_000, ct);
+        }
+        if (redrawn is null || redrawn.SvgStatus != "failed" || redrawn.Svg != Placeholder.Build($"Day {redrawn.DayIndex} · {redrawn.Title}"))
+            throw new InvalidOperationException("Redraw did not complete with a new failed placeholder.");
+        await redraw.WaitForAsync(new() { Timeout = 60_000 });
+        stack.Evidence.Event("E", "passed; placeholder rendered and redraw completed with the injected failure");
     }
 }
 

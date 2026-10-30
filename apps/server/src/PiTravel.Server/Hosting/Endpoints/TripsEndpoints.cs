@@ -23,7 +23,7 @@ public static class TripsEndpoints
         {
             if (!TryValidateCreate(body, out var input, out var error))
             {
-                return Results.Json(new { error }, statusCode: StatusCodes.Status400BadRequest);
+                return Results.Json(new { error }, TripJson.Options, statusCode: StatusCodes.Status400BadRequest);
             }
 
             var errors = BriefValidator.Validate(
@@ -39,11 +39,12 @@ public static class TripsEndpoints
             {
                 return Results.Json(
                     new { error = string.Join("; ", errors) },
+                    TripJson.Options,
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
             var entry = await service.CreateTripAsync(input, ct);
-            return Results.Json(entry, statusCode: StatusCodes.Status201Created);
+            return Results.Json(entry, TripJson.Options, statusCode: StatusCodes.Status201Created);
         });
 
         app.MapGet("/api/trips/{tripId}", async (string tripId, TravelService service, CancellationToken ct) =>
@@ -81,6 +82,7 @@ public static class TripsEndpoints
             {
                 return Results.Json(
                     new { error = "requestId is required" },
+                    TripJson.Options,
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
@@ -88,13 +90,14 @@ public static class TripsEndpoints
             {
                 return Results.Json(
                     new { error = "content must not be empty" },
+                    TripJson.Options,
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
             try
             {
                 var submissionId = await service.SubmitMessageAsync(tripId, body.Content ?? "", body.RequestId, ct);
-                return Results.Json(new { submissionId }, statusCode: StatusCodes.Status202Accepted);
+                return Results.Json(new { submissionId }, TripJson.Options, statusCode: StatusCodes.Status202Accepted);
             }
             catch (Exception error) when (NotFound.IsNotFound(error))
             {

@@ -37,7 +37,9 @@ public sealed class ServerHost : IAsyncDisposable
     public static ServerHost Create(Evidence evidence, string dataDir, bool invalidSvg = false)
     {
         Directory.CreateDirectory(dataDir);
-        return new ServerHost(evidence, dataDir, FreePort(), invalidSvg);
+        // Pinned to 4000: the web build's /backend rewrite targets 127.0.0.1:4000,
+        // and a runtime API_URL cannot change a rewrite baked at build time.
+        return new ServerHost(evidence, dataDir, 4000, invalidSvg);
     }
 
     public async Task StartAsync(CancellationToken ct)
@@ -48,6 +50,18 @@ public sealed class ServerHost : IAsyncDisposable
         }
 
         Require("DEEPSEEK_API_KEY");
+        using (var probe = new TcpListener(IPAddress.Loopback, Port))
+        {
+            try
+            {
+                probe.Start();
+            }
+            catch (SocketException error)
+            {
+                throw new InvalidOperationException($"Acceptance server port {Port} is already in use.", error);
+            }
+        }
+
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -69,7 +83,11 @@ public sealed class ServerHost : IAsyncDisposable
         psi.Environment["DATA_DIR"] = DataDir;
         CopyOptional("MAGPIE_BASE_URL", psi);
         CopyOptional("MAGPIE_MODEL", psi);
-        CopyOptional("MAGPIE_API_KEY", psi);
+        // The provider auth resolves this variable, and an absent one leaves the
+        // provider unconfigured. Magpie accepts any local key, matching the
+        // TypeScript default.
+        psi.Environment["MAGPIE_API_KEY"] =
+            Environment.GetEnvironmentVariable("MAGPIE_API_KEY") ?? "magpie";
         CopyOptional("MAGPIE_MAX_TOKENS", psi);
         CopyOptional("PI_THINKING_LEVEL", psi);
         if (InvalidSvg)
@@ -89,6 +107,16 @@ public sealed class ServerHost : IAsyncDisposable
         process.BeginErrorReadLine();
         _process = process;
         _evidence.Event("host", $"server starting on {BaseUrl}, DATA_DIR={DataDir}");
+        // The port is pinned, so a leftover server from an earlier run can already
+        // be answering /health. Wait for this process to settle first: a bind
+        // failure exits it within a second, and only then is /health meaningful.
+        await Task.Delay(2_000, ct);
+        if (process.HasExited)
+        {
+            throw new InvalidOperationException(
+                $"Server exited early with code {process.ExitCode}. See {Path.Combine(_evidence.Root, "server.log")}.");
+        }
+
         await WaitForHealthAsync(ct);
         _evidence.Event("host", $"server healthy on {BaseUrl} (pid {process.Id})");
     }

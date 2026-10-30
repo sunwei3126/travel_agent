@@ -29,10 +29,10 @@ public sealed class Stack : IAsyncDisposable
     {
         var dataDir = Path.Combine(evidence.Root, "data");
         var server = ServerHost.Create(evidence, dataDir, invalidSvg);
-        await server.StartAsync(ct);
         var web = WebHost.Create(evidence, server.BaseUrl);
         try
         {
+            await server.StartAsync(ct);
             await web.StartAsync(ct);
             var browser = await BrowserSession.LaunchAsync();
             return new Stack(server, web, browser, new ApiClient(server.BaseUrl), evidence);
@@ -68,7 +68,10 @@ public static class Program
 
         var evidence = Evidence.Create(RepoRoot.Path);
         Console.WriteLine($"evidence: {evidence.Root}");
-        var minutes = scenario.Equals("all", StringComparison.OrdinalIgnoreCase) ? 90 : 20;
+        // One scenario spends most of its time waiting on the model: scenario A
+        // researches for ~20 minutes before it can finalize, so its own cap has
+        // to outlast the waits inside it (15 min for the day cards, 15 to settle).
+        var minutes = scenario.Equals("all", StringComparison.OrdinalIgnoreCase) ? 150 : 45;
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(minutes));
         try
         {

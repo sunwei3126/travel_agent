@@ -204,14 +204,8 @@ public sealed class AgentPureTests
     [Fact]
     public void PlannerInstructionsContainAllMandatedRules()
     {
-        Assert.Equal(2630, Prompts.PlannerInstructions.Length);
-        var sha256 = Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(Prompts.PlannerInstructions)))
-            .ToLowerInvariant();
-        Assert.Equal(
-            "d9aaee3bea25adbc3ef3b88fdd4d6047eabde73a7f6c9ff35dd8f242da41ed65",
-            sha256);
+        Assert.Contains("report the overage and feasible savings, then stop", Prompts.PlannerInstructions);
+        Assert.DoesNotContain("If it is over budget, revise days before finalizing", Prompts.PlannerInstructions);
 
         Assert.Contains("at most 3 key questions", Prompts.PlannerInstructions);
         Assert.Contains("No research before the brief is complete", Prompts.PlannerInstructions);

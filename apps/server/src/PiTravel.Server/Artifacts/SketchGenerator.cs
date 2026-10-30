@@ -19,10 +19,11 @@ public static class SketchGenerator
                 "invalid",
                 StringComparison.Ordinal))
         {
-            return new SketchResult(
-                Placeholder.Build($"Day {day.DayIndex} · {day.Title}"),
-                "failed",
-                "PITRAVEL_TEST_SVG_MODE=invalid");
+            generate = (_, token) =>
+            {
+                token.ThrowIfCancellationRequested();
+                return Task.FromResult("not an svg");
+            };
         }
 
         var first = await AttemptAsync(generate, prompt, ct).ConfigureAwait(false);

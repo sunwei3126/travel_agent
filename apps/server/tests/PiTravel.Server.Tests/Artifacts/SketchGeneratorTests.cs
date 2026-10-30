@@ -132,6 +132,7 @@ public sealed class SketchGeneratorTests
             Assert.Equal(0, calls);
             Assert.Equal("failed", result.Status);
             Assert.Equal(Placeholder.Build("Day 1 · 红门"), result.Svg);
+            Assert.Equal("No SVG found in response", result.Error);
         }
         finally
         {

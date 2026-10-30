@@ -19,23 +19,23 @@
   },
   "packageManager": "npm@10.9.4",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/web",
+    "packages/shared"
   ],
   "scripts": {
     "dev": "npm run dev:server",
-    "dev:server": "npm run dev --workspace @pi-demo/server",
+    "dev:server": "dotnet watch --project apps/server/src/PiTravel.Server run",
     "dev:web": "npm run dev --workspace @pi-demo/web",
     "build": "npm run build --workspace @pi-demo/web",
-    "start:server": "npm run start --workspace @pi-demo/server",
+    "start:server": "dotnet run --project apps/server/src/PiTravel.Server",
     "start:web": "npm run start --workspace @pi-demo/web",
     "test": "npm run test --workspaces --if-present",
+    "test:server": "dotnet test apps/server",
     "typegen": "npm run typegen --workspace @pi-demo/web",
-    "typecheck": "npm run typecheck --workspace @pi-demo/server && npm run typecheck --workspace @pi-demo/shared && npm run typecheck --workspace @pi-demo/web",
+    "typecheck": "npm run typecheck --workspace @pi-demo/shared && npm run typecheck --workspace @pi-demo/web",
     "acceptance:live": "tsx scripts/acceptance-live.ts",
-    "acceptance:crash": "bash scripts/crash-resume.sh",
-    "acceptance:e2e": "dotnet run --project tools/PiTravel.Acceptance -- --scenario all",
-    "probe:thinking": "tsx scripts/probe-thinking.ts"
+    "acceptance:crash": "dotnet run --project tools/PiTravel.Acceptance -- --scenario C",
+    "acceptance:e2e": "dotnet run --project tools/PiTravel.Acceptance -- --scenario all"
   },
   "keywords": [
     "travel-agent",

@@ -37,6 +37,14 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test .NET server
+        run: dotnet test apps/server
+
       - name: Validate lockfile
         run: |
           if grep -q 'registry.npmmirror.com' package-lock.json; then

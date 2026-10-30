@@ -1,8 +1,8 @@
 namespace PiTravel.Server.Agent;
 
 /// <summary>
-/// System instructions for the travel planner agent, mirroring
-/// <c>PLANNER_INSTRUCTIONS</c> in <c>apps/server/src/agent/prompts.ts</c> verbatim.
+/// System instructions for the travel planner agent, adapted from
+/// <c>PLANNER_INSTRUCTIONS</c> in <c>apps/server/src/agent/prompts.ts</c>.
 /// </summary>
 public static class Prompts
 {
@@ -19,7 +19,7 @@ public static class Prompts
         "7. Emit exactly one plan_emit_day card per trip day, in day order, using the recorded source ids.\n" +
         "8. After emitting a day, call sketch_day for that day. Re-emitting a changed day invalidates its sketch, so sketch it again; unchanged days keep their sketch.\n" +
         "9. Cite every hard-fact claim with source ids. Mark claims you could not verify as unverified instead of presenting them as facts. Never fabricate places, prices, schedules, or availability.\n" +
-        "10. When all days are written, call plan_finalize and check the total against the stated budget. If it is over budget, revise days before finalizing.\n" +
+        "10. When all days are written, call plan_finalize and check the total against the stated budget. If it is over budget, report the overage and feasible savings, then stop; do not repeatedly revise solely to force the estimate under budget.\n" +
         "\n" +
         "Targeted edits and cascades:\n" +
         "- A request that names one day (for example \"make day 3 easier\") changes only that day. Re-emit only that card and leave every other card untouched.\n" +

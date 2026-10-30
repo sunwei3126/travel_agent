@@ -35,7 +35,7 @@ public class TravelService
         7. Emit exactly one plan_emit_day card per trip day, in day order, using the recorded source ids.
         8. After emitting a day, call sketch_day for that day. Re-emitting a changed day invalidates its sketch, so sketch it again; unchanged days keep their sketch.
         9. Cite every hard-fact claim with source ids. Mark claims you could not verify as unverified instead of presenting them as facts. Never fabricate places, prices, schedules, or availability.
-        10. When all days are written, call plan_finalize and check the total against the stated budget. If it is over budget, revise days before finalizing.
+        10. When all days are written, call plan_finalize and check the total against the stated budget. If it is over budget, report the overage and feasible savings, then stop; do not repeatedly revise solely to force the estimate under budget.
 
         Targeted edits and cascades:
         - A request that names one day (for example "make day 3 easier") changes only that day. Re-emit only that card and leave every other card untouched.
@@ -117,6 +117,8 @@ public class TravelService
             Models = options.Models,
             Registry = registry,
             Now = () => now().ToUnixTimeMilliseconds(),
+            OnReport = (error, info) =>
+                Console.Error.WriteLine($"[harness] {info}: {error.GetType().Name}: {error.Message}"),
         };
 
         var ctx = ContextSignals.WithAbortSignal(ct, Context.Background);
