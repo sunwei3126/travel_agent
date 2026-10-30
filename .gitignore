@@ -17,6 +17,7 @@ test-results/
 playwright-report/
 /artifacts/
 apps/server/data/
+apps/server/src/PiTravel.Server/Artifacts/probe-data/
 bin/
 obj/
 .DS_Store
