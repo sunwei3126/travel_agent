@@ -25,7 +25,7 @@ export function TravelChat({
       useSingleEndpoint={false}
       enableInspector={false}
     >
-      <ChatPanel key={tripId} tripId={tripId} />
+      <ChatPanel key={tripId} />
       {children}
     </CopilotKit>
   );

@@ -7,16 +7,9 @@ import type {
   UserMessage,
 } from "@ag-ui/core";
 
-export type ToolProgress = {
-  output: string;
-  details?: unknown;
-  diagnostics?: unknown;
-};
-
 export type ToolTrace = {
   call: ToolCall;
   result?: ToolMessage;
-  progress?: ToolProgress;
 };
 
 export type ChatSegment =
@@ -28,10 +21,7 @@ export type ChatSegment =
 export type ToolStatus = "running" | "ok" | "error" | "unfinished";
 
 /** Groups assistant tool calls with their tool results and sorts the transcript. */
-export function buildChatSegments(
-  messages: readonly Message[],
-  progress?: ReadonlyMap<string, ToolProgress>,
-): ChatSegment[] {
+export function buildChatSegments(messages: readonly Message[]): ChatSegment[] {
   const results = new Map<string, ToolMessage>();
   for (const message of messages) {
     if (message.role === "tool") results.set(message.toolCallId, message);
@@ -55,11 +45,7 @@ export function buildChatSegments(
       case "assistant": {
         const tools = (message.toolCalls ?? []).map((call) => {
           const result = results.get(call.id);
-          return {
-            call,
-            result,
-            progress: result === undefined ? progress?.get(call.id) : undefined,
-          };
+          return { call, result };
         });
         segments.push({ kind: "assistant", message, tools });
         break;
@@ -91,7 +77,7 @@ export function toolStatus(trace: ToolTrace, isLoading: boolean): ToolStatus {
     if (toolMetadata?.status === "error") return "error";
     return "ok";
   }
-  if (trace.progress !== undefined || isLoading) return "running";
+  if (isLoading) return "running";
   return "unfinished";
 }
 

@@ -5,13 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   snapshot,
-  useCoAgentMock,
   useTripSnapshotMock,
   sendMessageMock,
   retryMock,
 } = vi.hoisted((): {
   snapshot: TripSnapshot;
-  useCoAgentMock: ReturnType<typeof vi.fn>;
   useTripSnapshotMock: ReturnType<typeof vi.fn>;
   sendMessageMock: ReturnType<typeof vi.fn>;
   retryMock: ReturnType<typeof vi.fn>;
@@ -31,7 +29,6 @@ const {
   });
 
   return {
-    useCoAgentMock: vi.fn(),
     useTripSnapshotMock: vi.fn(),
     sendMessageMock: vi.fn().mockResolvedValue(undefined),
     retryMock: vi.fn(),
@@ -67,8 +64,10 @@ const {
 });
 
 vi.mock("@copilotkit/react-core", () => ({
-  useCoAgent: useCoAgentMock,
-  useCopilotChatInternal: () => ({ sendMessage: sendMessageMock }),
+  useCopilotChatInternal: () => ({
+    sendMessage: sendMessageMock,
+    isLoading: false,
+  }),
   CopilotKit: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -85,8 +84,6 @@ import { TripView } from "./TripView";
 
 describe("TripView", () => {
   beforeEach(() => {
-    useCoAgentMock.mockReset();
-    useCoAgentMock.mockReturnValue({ state: {}, running: false });
     useTripSnapshotMock.mockReset();
     useTripSnapshotMock.mockReturnValue({
       snapshot,
@@ -106,32 +103,6 @@ describe("TripView", () => {
     expect(screen.getByText("目的地")).toBeInTheDocument();
     expect(screen.getByText(/搜索 12/)).toBeInTheDocument();
     expect(screen.getByText(/¥3000/)).toBeInTheDocument();
-  });
-
-  it("prefers live state when its day cards are newer", () => {
-    useCoAgentMock.mockReturnValue({
-      running: false,
-      state: {
-        brief: snapshot.brief,
-        plan: {
-          days: [
-            {
-              ...snapshot.plan.days[0],
-              title: "实时第一天",
-              updatedAt: "2026-10-20T00:00:00.000Z",
-            },
-          ],
-        },
-        sources: {},
-        research: { searchCount: 20, fetchCount: 9, running: false },
-      },
-    });
-
-    render(<TripView tripId="t1" initial={snapshot} />);
-
-    expect(screen.getByText("实时第一天")).toBeInTheDocument();
-    expect(screen.getAllByTestId("day-card")).toHaveLength(1);
-    expect(screen.getByText(/搜索 20/)).toBeInTheDocument();
   });
 
   it("shows a load error with a retry action", () => {
@@ -244,32 +215,5 @@ describe("TripView", () => {
     withFault("recovery");
     render(<TripView tripId="t1" initial={snapshot} />);
     expect(screen.getByTestId("trip-fault")).toHaveTextContent("任务恢复失败");
-  });
-
-  it("keeps the durable state when live day cards are older", () => {
-    useCoAgentMock.mockReturnValue({
-      running: false,
-      state: {
-        brief: snapshot.brief,
-        plan: {
-          days: [
-            {
-              ...snapshot.plan.days[0],
-              title: "旧实时",
-              updatedAt: "2026-10-18T00:00:00.000Z",
-            },
-          ],
-        },
-        sources: {},
-        research: { searchCount: 99, fetchCount: 0, running: false },
-      },
-    });
-
-    render(<TripView tripId="t1" initial={snapshot} />);
-
-    expect(screen.queryByText("旧实时")).not.toBeInTheDocument();
-    expect(screen.getAllByTestId("day-card")).toHaveLength(3);
-    expect(screen.getByText(/搜索 12/)).toBeInTheDocument();
-    expect(screen.queryByText(/搜索 99/)).not.toBeInTheDocument();
   });
 });

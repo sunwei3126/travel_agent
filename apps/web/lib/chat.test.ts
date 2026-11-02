@@ -43,32 +43,12 @@ describe("buildChatSegments", () => {
     expect(first.tools).toHaveLength(1);
     expect(first.tools[0].result?.content).toBe("找到 3 条");
   });
-
-  it("attaches live progress by tool call id", () => {
-    const progress = new Map([
-      ["tc1", { output: "搜索中" }],
-    ]);
-    const segments = buildChatSegments([assistant], progress);
-    const first = segments[0];
-    if (first.kind !== "assistant") throw new Error("expected assistant");
-    expect(first.tools[0].progress?.output).toBe("搜索中");
-  });
-
-  it("drops live progress once the tool result arrives", () => {
-    const progress = new Map([
-      ["tc1", { output: "搜索中" }],
-    ]);
-    const segments = buildChatSegments([assistant, result], progress);
-    const first = segments[0];
-    if (first.kind !== "assistant") throw new Error("expected assistant");
-    expect(first.tools[0].progress).toBeUndefined();
-  });
 });
 
 describe("toolStatus", () => {
   it("derives running, ok, error, and unfinished states", () => {
     expect(toolStatus({ call }, false)).toBe("unfinished");
-    expect(toolStatus({ call, progress: { output: "x" } }, false)).toBe("running");
+    expect(toolStatus({ call }, true)).toBe("running");
     expect(toolStatus({ call, result }, false)).toBe("ok");
     expect(
       toolStatus({ call, result: { ...result, error: "boom" } }, false),

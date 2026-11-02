@@ -9,71 +9,23 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import {
-  buildChatSegments,
-  type ToolProgress,
-} from "../../lib/chat";
+import { buildChatSegments } from "../../lib/chat";
 import { ChatMessages } from "./ChatMessages";
 
-export function ChatPanel({ tripId }: { tripId: string }) {
+export function ChatPanel() {
   // CopilotKit's own message views render tool calls too; give them a
   // renderer so dev builds do not warn about our custom panel.
   useDefaultRenderTool({});
 
-  const {
-    messages,
-    sendMessage,
-    stopGeneration,
-    isLoading,
-    isAvailable,
-    agent,
-  } = useCopilotChatInternal();
+  const { messages, sendMessage, stopGeneration, isLoading, isAvailable } =
+    useCopilotChatInternal();
 
   const [input, setInput] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<Map<string, ToolProgress>>(
-    () => new Map(),
-  );
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
 
-  useEffect(() => {
-    if (agent === undefined || agent === null) return;
-    const subscription = agent.subscribe({
-      onCustomEvent: ({ event }) => {
-        if (event.name !== "travel.tool_progress") return;
-        const value = event.value as
-          | { toolCallId?: unknown; output?: unknown }
-          | undefined;
-        if (
-          typeof value?.toolCallId !== "string" ||
-          typeof value.output !== "string"
-        ) {
-          return;
-        }
-        setProgress((previous) => {
-          const next = new Map(previous);
-          next.set(value.toolCallId as string, {
-            output: value.output as string,
-          });
-          return next;
-        });
-      },
-    });
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [agent]);
-
-  useEffect(() => {
-    if (isLoading) return;
-    setProgress((previous) => (previous.size === 0 ? previous : new Map()));
-  }, [isLoading]);
-
-  const segments = useMemo(
-    () => buildChatSegments(messages, progress),
-    [messages, progress],
-  );
+  const segments = useMemo(() => buildChatSegments(messages), [messages]);
 
   useEffect(() => {
     const element = scrollRef.current;

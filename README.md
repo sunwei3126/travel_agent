@@ -25,8 +25,7 @@ plans survive refreshes and server restarts.
 - **One card per day.** Each card contains timed blocks, scenery/food/transport
   claims, an estimated cost range, source chips, and a generated SVG sketch.
 - **Visible traces.** Reasoning blocks and tool calls are collapsed by default
-  in chat; expand one to see arguments, status, results, errors, and live tool
-  progress.
+  in chat; expand one to see arguments, status, results, and errors.
 - **Durable by construction.** Thread history lives in a CopilotKit runner
   (SQLite), trip state in the server's own SQLite, and the model session in
   Claude Agent SDK transcripts, all under `DATA_DIR`. A restarted server
@@ -135,7 +134,10 @@ API_URL=http://127.0.0.1:4000 npm run start:web
 | `PI_THINKING_LEVEL` | server | `low` | `off`, `low`, `medium`, or `high`; mapped to the SDK thinking budget (`off` disables it). |
 | `API_URL` | Next config, scripts | `http://127.0.0.1:4000` | Target of the `/backend` rewrite; acceptance API base. |
 | `NEXT_PUBLIC_API_URL` | browser code | `/backend` | Inlined at build time; an absolute value may need CORS. |
-| `MAGPIE_LIVE` | tests | unset | Set `1` to run the live provider test. |
+
+An existing `DATA_DIR` written by the pi version (`pi.sqlite`, `trips.json`) is
+**not migrated**. Delete the old directory, or point `DATA_DIR` at a new path,
+before starting this version; otherwise the trips created there will not appear.
 
 ## Scripts
 

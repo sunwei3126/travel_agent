@@ -120,13 +120,6 @@ export type TripFault = {
   at: string;
 };
 
-export type TripState = {
-  brief: TripBrief;
-  plan: TripPlan;
-  sources: TripSources;
-  research: TripResearch & { running: boolean };
-};
-
 export type TripSnapshot = {
   trip: TripIndexEntry;
   brief: TripBrief;

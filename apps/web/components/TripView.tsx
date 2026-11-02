@@ -1,15 +1,10 @@
 "use client";
 
-import {
-  useCoAgent,
-  useCopilotChatInternal,
-} from "@copilotkit/react-core";
+import { useCopilotChatInternal } from "@copilotkit/react-core";
 import {
   missingBriefFields,
   type TripFault,
-  type TripPlan,
   type TripSnapshot,
-  type TripState,
 } from "@pi-demo/shared";
 import { useTripSnapshot } from "../hooks/useTripSnapshot";
 import { BriefChecklist } from "./BriefChecklist";
@@ -17,25 +12,6 @@ import { BudgetSummary } from "./BudgetSummary";
 import { PlanBoard } from "./PlanBoard";
 import { ResearchProgress } from "./ResearchProgress";
 import { TravelChat } from "./TravelChat";
-
-function newestDayUpdatedAt(plan: TripPlan): string {
-  return plan.days.reduce(
-    (newest, day) => (day.updatedAt > newest ? day.updatedAt : newest),
-    "",
-  );
-}
-
-function hasNewerPlan(
-  live: TripState | undefined,
-  durable: TripSnapshot,
-): live is TripState {
-  if (live == null || live.plan == null) return false;
-  const liveUpdatedAt = newestDayUpdatedAt(live.plan);
-  return (
-    liveUpdatedAt.length > 0 &&
-    liveUpdatedAt > newestDayUpdatedAt(durable.plan)
-  );
-}
 
 function faultTitle(fault: TripFault): string {
   if (fault.kind === "recovery") return "任务恢复失败";
@@ -49,16 +25,10 @@ function TripViewContent({
   tripId: string;
   initial?: TripSnapshot;
 }) {
-  const { state, running: agentRunning } = useCoAgent<TripState>({
-    name: "travel",
-  });
-  const { snapshot, error, loading, retry } = useTripSnapshot(
-    tripId,
-    agentRunning,
-  );
   // `useCopilotChatHeadless_c` is license-gated and becomes non-functional
   // without a public API key. Use the same free hook CopilotChat uses.
-  const { sendMessage } = useCopilotChatInternal();
+  const { sendMessage, isLoading } = useCopilotChatInternal();
+  const { snapshot, error, loading, retry } = useTripSnapshot(tripId, isLoading);
 
   const durable = snapshot ?? initial;
   if (durable === undefined) {
@@ -75,11 +45,7 @@ function TripViewContent({
     return <p className="empty">{loading ? "加载中…" : "暂无行程数据。"}</p>;
   }
 
-  const live = hasNewerPlan(state, durable) ? state : undefined;
-  const brief = live?.brief ?? durable.brief;
-  const plan = live?.plan ?? durable.plan;
-  const research = live?.research ?? durable.research;
-  const sources = live?.sources ?? durable.sources;
+  const { brief, plan, research, sources } = durable;
   const faults = durable.faults ?? [];
 
   const send = (content: string): void => {
@@ -119,7 +85,7 @@ function TripViewContent({
       <ResearchProgress
         searchCount={research.searchCount}
         fetchCount={research.fetchCount}
-        running={live?.research?.running ?? durable.running}
+        running={durable.running}
       />
 
       <section aria-labelledby="plan-heading" className="plan-board">

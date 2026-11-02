@@ -1,5 +1,5 @@
 import type { Message } from "@ag-ui/core";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const chat = vi.hoisted(() => ({ hook: vi.fn() }));
@@ -30,39 +30,18 @@ const messages: Message[] = [
   { id: "t1", role: "tool", toolCallId: "tc1", content: "找到 3 条" },
 ];
 
-type Subscriber = {
-  onCustomEvent?: (params: {
-    event: { name: string; value: unknown };
-  }) => void;
-};
-
 function setup(overrides: Record<string, unknown> = {}) {
   const sendMessage = vi.fn(async () => {});
   const stopGeneration = vi.fn();
-  let subscriber: Subscriber | undefined;
   chat.hook.mockReturnValue({
     messages,
     sendMessage,
     stopGeneration,
     isLoading: false,
     isAvailable: true,
-    agent: {
-      subscribe: (next: Subscriber) => {
-        subscriber = next;
-        return { unsubscribe: () => {} };
-      },
-    },
     ...overrides,
   });
-  return {
-    sendMessage,
-    stopGeneration,
-    emit: (event: { name: string; value: unknown }) => {
-      act(() => {
-        subscriber?.onCustomEvent?.({ event });
-      });
-    },
-  };
+  return { sendMessage, stopGeneration };
 }
 
 describe("ChatPanel", () => {
@@ -72,7 +51,7 @@ describe("ChatPanel", () => {
 
   it("renders messages, reasoning, and tool traces collapsed by default", () => {
     setup();
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
 
     expect(screen.getByText("泰山三天")).toBeInTheDocument();
     expect(screen.getByText("你好")).toBeInTheDocument();
@@ -96,7 +75,7 @@ describe("ChatPanel", () => {
 
   it("sends a message from the composer", async () => {
     const { sendMessage } = setup();
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
 
     const input = screen.getByPlaceholderText("说说你想去哪、玩几天、在意什么");
     fireEvent.change(input, { target: { value: "去泰山" } });
@@ -111,7 +90,7 @@ describe("ChatPanel", () => {
 
   it("shows the loading state and stops generation", () => {
     const { stopGeneration } = setup({ isLoading: true });
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
 
     expect(screen.getByText(/助手正在思考/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "停止" }));
@@ -120,7 +99,7 @@ describe("ChatPanel", () => {
 
   it("sends on Enter and keeps Shift+Enter for a newline", async () => {
     const { sendMessage } = setup();
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
 
     const input = screen.getByPlaceholderText("说说你想去哪、玩几天、在意什么");
     fireEvent.change(input, { target: { value: "去泰山" } });
@@ -139,7 +118,7 @@ describe("ChatPanel", () => {
     setup({
       messages: [{ id: "r2", role: "reasoning", content: "" }],
     });
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
 
     const reasoning = screen.getByTestId("reasoning-block");
     expect(
@@ -171,7 +150,7 @@ describe("ChatPanel", () => {
         },
       ],
     });
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
 
     const tool = screen.getByTestId("tool-call");
     expect(within(tool).getByText("失败")).toBeInTheDocument();
@@ -179,39 +158,9 @@ describe("ChatPanel", () => {
     expect(within(tool).getByText("boom")).toBeInTheDocument();
   });
 
-  it("shows live tool progress and marks the call running", () => {
-    const { emit } = setup({
-      messages: [
-        {
-          id: "a3",
-          role: "assistant",
-          content: "",
-          toolCalls: [
-            {
-              id: "tc3",
-              type: "function",
-              function: { name: "deepseek_search", arguments: "{}" },
-            },
-          ],
-        },
-      ],
-    });
-    render(<ChatPanel tripId="t1" />);
-
-    emit({
-      name: "travel.tool_progress",
-      value: { toolCallId: "tc3", output: "搜索中" },
-    });
-
-    const tool = screen.getByTestId("tool-call");
-    expect(within(tool).getByText(/运行中/)).toBeInTheDocument();
-    fireEvent.click(within(tool).getByText(/搜索资料/));
-    expect(within(tool).getByText("搜索中")).toBeInTheDocument();
-  });
-
   it("shows an empty state", () => {
     setup({ messages: [] });
-    render(<ChatPanel tripId="t1" />);
+    render(<ChatPanel />);
     expect(screen.getByText(/还没有消息/)).toBeInTheDocument();
   });
 });

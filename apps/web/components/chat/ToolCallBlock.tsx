@@ -46,12 +46,6 @@ export function ToolCallBlock({
             <pre>{bodyText}</pre>
           </div>
         )}
-        {trace.progress !== undefined && trace.progress.output.length > 0 && (
-          <div className="chat-trace-section">
-            <span className="chat-trace-label">实时输出</span>
-            <pre>{trace.progress.output}</pre>
-          </div>
-        )}
       </div>
     </details>
   );

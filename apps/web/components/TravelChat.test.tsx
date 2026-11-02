@@ -29,11 +29,7 @@ vi.mock("@copilotkit/react-core", () => ({
 }));
 
 vi.mock("./chat/ChatPanel", () => ({
-  ChatPanel: ({ tripId }: { tripId: string }) => (
-    <div data-testid="chat-panel" data-trip-id={tripId}>
-      旅行助手
-    </div>
-  ),
+  ChatPanel: () => <div data-testid="chat-panel">旅行助手</div>,
 }));
 
 import { TravelChat } from "./TravelChat";
@@ -47,7 +43,7 @@ describe("TravelChat", () => {
     expect(provider).toHaveAttribute("data-agent", "travel");
     expect(provider).toHaveAttribute("data-thread-id", "abc");
     expect(provider).toHaveAttribute("data-single-endpoint", "false");
-    expect(screen.getByTestId("chat-panel")).toHaveAttribute("data-trip-id", "abc");
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByText("旅行助手")).toBeInTheDocument();
   });
 
