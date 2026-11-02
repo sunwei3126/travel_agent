@@ -1,55 +1,16 @@
-import type { TripResearch, TripSources } from "@pi-demo/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { DeepSeekClient, SearchHit } from "../deepseek/client";
 import { addSearchToSources, sourceIdForUrl } from "../research/sources";
-import {
-  TripResearchDoc,
-  TripSearchCacheDoc,
-  TripSourcesDoc,
-  type SearchCache,
-} from "../trips/docs";
 import { enforceCap } from "./tools/caps";
 import { createFetchTool } from "./tools/fetch";
 import { createSearchTool, searchCacheKey } from "./tools/search";
+import { TRIP_ID, invoke, makeContext, textOf } from "./tools/test-support";
 
 it("enforces the per-trip search and fetch caps", () => {
   expect(() => enforceCap(40, 40, "search")).toThrow("search cap reached");
   expect(() => enforceCap(39, 40, "search")).not.toThrow();
   expect(() => enforceCap(30, 30, "fetch")).toThrow("fetch cap reached");
 });
-
-type Docs = {
-  research: TripResearch;
-  sources: TripSources;
-  cache: SearchCache;
-};
-
-function fakeApi(docs: Docs) {
-  const docFor = (token: unknown): unknown => {
-    if (token === TripResearchDoc) return docs.research;
-    if (token === TripSourcesDoc) return docs.sources;
-    if (token === TripSearchCacheDoc) return docs.cache;
-    return undefined;
-  };
-  return {
-    conversationId: 1,
-    snapshot: async (token: unknown) => docFor(token),
-    commit: async <T>(
-      change: (tx: { doc: (token: unknown) => Promise<unknown> }) => T | Promise<T>,
-    ): Promise<T> =>
-      change({
-        doc: async (token: unknown) => docFor(token),
-      }),
-  };
-}
-
-function docs(): Docs {
-  return {
-    research: { searchCount: 0, fetchCount: 0 },
-    sources: {},
-    cache: {},
-  };
-}
 
 const hit: SearchHit = {
   title: "泰山景区官网",
@@ -72,34 +33,20 @@ const hits3: SearchHit[] = [
   { ...hit, title: "OTA", url: "https://example.com/ota", authority: 3 },
 ];
 
-function searchTool(deepseek: DeepSeekClient) {
-  return createSearchTool({
-    now: () => new Date("2026-10-19T00:00:00Z"),
-    deepseek,
-    generateSketch: async () => ({ svg: "", status: "ok" }),
-    caps: { search: 40, fetch: 30 },
-  });
+function setup(deepseek: unknown) {
+  const ctx = makeContext({ deepseek: deepseek as DeepSeekClient });
+  return { ctx, tool: createSearchTool(ctx) };
 }
 
 describe("deepseek_search", () => {
   it("returns the source id, URL, snippet, authority, and freshness to the model", async () => {
-    const deepseek = {
-      search: vi.fn(async () => [hit]),
-      fetch: vi.fn(async (url: string) => fetchResult(url)),
-    } as unknown as DeepSeekClient;
-    const store = docs();
-    const tool = searchTool(deepseek);
+    const deepseek = { search: vi.fn(async () => [hit]), fetch: vi.fn(async (url: string) => fetchResult(url)) };
+    const { tool } = setup(deepseek);
 
-    const result = await tool.execute(
-      { query: "泰山 门票" },
-      fakeApi(store) as never,
-      {} as never,
-    );
-    const text = (result.output as Array<{ text: string }>)[0].text;
-    const sourceId = (result.structuredOutput as { sourceIds: string[] }).sourceIds[0];
+    const result = await invoke(tool, { query: "泰山 门票" });
+    const text = textOf(result);
 
-    expect(result.structuredOutput).toEqual({ sourceIds: [expect.any(String)] });
-    expect(text).toContain(`[${sourceId}]`);
+    expect(text).toContain(`[${sourceIdForUrl(hit.url)}]`);
     expect(text).toContain(hit.url);
     expect(text).toContain(hit.snippet);
     expect(text).toContain("authority: 4");
@@ -112,76 +59,51 @@ describe("deepseek_search", () => {
   it("reuses the normalized query cache without another API call or count", async () => {
     const search = vi.fn(async () => [hit]);
     const fetch = vi.fn(async (url: string) => fetchResult(url));
-    const tool = searchTool({ search, fetch } as unknown as DeepSeekClient);
-    const store = docs();
-    const api = fakeApi(store);
+    const { ctx, tool } = setup({ search, fetch });
 
-    const first = await tool.execute({ query: " 泰山   门票 " }, api as never, {} as never);
-    const second = await tool.execute({ query: "泰山 门票" }, api as never, {} as never);
+    const first = await invoke(tool, { query: " 泰山   门票 " });
+    const second = await invoke(tool, { query: "泰山 门票" });
 
     expect(search).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(second.structuredOutput).toEqual(first.structuredOutput);
-    expect(store.research.searchCount).toBe(1);
-    expect(store.research.fetchCount).toBe(1);
-    expect(store.research.searchAttempts).toEqual({
-      [searchCacheKey("泰山 门票", {})]: 1,
-    });
+    expect(textOf(second)).toContain(`[${sourceIdForUrl(hit.url)}]`);
+    expect(textOf(first)).toContain(`[${sourceIdForUrl(hit.url)}]`);
+    const research = ctx.store.getDoc(TRIP_ID, "research");
+    expect(research.searchCount).toBe(1);
+    expect(research.fetchCount).toBe(1);
+    expect(research.searchAttempts).toEqual({ [searchCacheKey("泰山 门票", {})]: 1 });
   });
 
   it("does not treat a different option set as a cache hit", async () => {
     const search = vi.fn(async () => [hit]);
-    const fetch = vi.fn(async (url: string) => fetchResult(url));
-    const tool = searchTool({ search, fetch } as unknown as DeepSeekClient);
-    const store = docs();
-    const api = fakeApi(store);
+    const { ctx, tool } = setup({ search, fetch: vi.fn(async (url: string) => fetchResult(url)) });
 
-    await tool.execute({ query: "泰山 门票" }, api as never, {} as never);
-    await tool.execute(
-      { query: "泰山 门票", needContent: true },
-      api as never,
-      {} as never,
-    );
+    await invoke(tool, { query: "泰山 门票" });
+    await invoke(tool, { query: "泰山 门票", needContent: true });
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(store.research.searchCount).toBe(2);
+    expect(ctx.store.getDoc(TRIP_ID, "research").searchCount).toBe(2);
   });
 
   it("tells the model not to plan from memory when nothing is found", async () => {
-    const tool = searchTool({
-      search: async () => [],
-      fetch: vi.fn(),
-    } as unknown as DeepSeekClient);
-    const result = await tool.execute(
-      { query: "空白查询" },
-      fakeApi(docs()) as never,
-      {} as never,
-    );
-    expect((result.output as Array<{ text: string }>)[0].text).toContain(
-      "Found 0 sources",
-    );
+    const { tool } = setup({ search: async () => [], fetch: vi.fn() });
+    const result = await invoke(tool, { query: "空白查询" });
+    expect(textOf(result)).toContain("Found 0 sources");
   });
 
   it("auto-fetches the top two authority results and exposes verified content", async () => {
     const search = vi.fn(async () => hits3);
     const fetch = vi.fn(async (url: string) => fetchResult(url));
-    const store = docs();
-    const result = await searchTool({ search, fetch } as unknown as DeepSeekClient).execute(
-      { query: "泰山 门票" },
-      fakeApi(store) as never,
-      {} as never,
-    );
+    const { ctx, tool } = setup({ search, fetch });
 
-    expect(fetch.mock.calls.map((call) => call[0])).toEqual([
-      hits3[1].url,
-      hits3[2].url,
-    ]);
-    expect(store.research.fetchCount).toBe(2);
+    const result = await invoke(tool, { query: "泰山 门票" });
 
-    const text = (result.output as Array<{ text: string }>)[0].text;
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual([hits3[1].url, hits3[2].url]);
+    expect(ctx.store.getDoc(TRIP_ID, "research").fetchCount).toBe(2);
+
+    const text = textOf(result);
     for (const fetchedHit of [hits3[1], hits3[2]]) {
-      const id = sourceIdForUrl(fetchedHit.url);
-      expect(text).toContain(`[${id}]`);
+      expect(text).toContain(`[${sourceIdForUrl(fetchedHit.url)}]`);
       expect(text).toContain(`来自 ${fetchedHit.url} 的已抓取正文`);
     }
   });
@@ -189,72 +111,52 @@ describe("deepseek_search", () => {
   it("respects the remaining fetch cap when auto-fetching", async () => {
     const search = vi.fn(async () => hits3);
     const fetch = vi.fn(async (url: string) => fetchResult(url));
-    const store = docs();
-    store.research.fetchCount = 29; // one fetch remains under the cap of 30
+    const { ctx, tool } = setup({ search, fetch });
+    ctx.store.setDoc(TRIP_ID, "research", { searchCount: 0, fetchCount: 29 }); // one fetch remains under the cap of 30
 
-    await searchTool({ search, fetch } as unknown as DeepSeekClient).execute(
-      { query: "泰山 门票" },
-      fakeApi(store) as never,
-      {} as never,
-    );
+    await invoke(tool, { query: "泰山 门票" });
 
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch.mock.calls[0][0]).toBe(hits3[1].url);
-    expect(store.research.fetchCount).toBe(30);
+    expect(ctx.store.getDoc(TRIP_ID, "research").fetchCount).toBe(30);
   });
 
   it("stores a fetch result that only contains content under the searched URL", async () => {
     const search = vi.fn(async () => [hits3[1]]);
     const fetch = vi.fn(async () => ({ content: "正文" }) as never);
-    const store = docs();
+    const { ctx, tool } = setup({ search, fetch });
 
-    const result = await searchTool({ search, fetch } as unknown as DeepSeekClient).execute(
-      { query: "泰山 门票" },
-      fakeApi(store) as never,
-      {} as never,
-    );
+    const result = await invoke(tool, { query: "泰山 门票" });
 
     const id = sourceIdForUrl(hits3[1].url);
-    expect(store.research.fetchCount).toBe(1);
-    expect(store.sources[id]).toMatchObject({
-      url: hits3[1].url,
-      title: hits3[1].url,
-      content: "正文",
-    });
-    expect(store.sources[id].fetchedAt).toBeTruthy();
-    const text = (result.output as Array<{ text: string }>)[0].text;
-    expect(text).toContain(`[${id}]`);
-    expect(text).toContain("fetchedContent: 正文");
+    expect(ctx.store.getDoc(TRIP_ID, "research").fetchCount).toBe(1);
+    const stored = ctx.store.getDoc(TRIP_ID, "sources")[id];
+    expect(stored).toMatchObject({ url: hits3[1].url, title: hits3[1].url, content: "正文" });
+    expect(stored.fetchedAt).toBeTruthy();
+    expect(textOf(result)).toContain(`[${id}]`);
+    expect(textOf(result)).toContain("fetchedContent: 正文");
   });
 
   it("keeps the search successful when one auto-fetch fails", async () => {
-    const twoHits = [hits3[1], hits3[0]];
-    const search = vi.fn(async () => twoHits);
+    const search = vi.fn(async () => [hits3[1], hits3[0]]);
     const fetch = vi.fn(async (url: string) => {
       if (url === hits3[1].url) throw new Error("page timeout");
       return fetchResult(url);
     });
-    const store = docs();
+    const { ctx, tool } = setup({ search, fetch });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const result = await searchTool({ search, fetch } as unknown as DeepSeekClient).execute(
-      { query: "泰山 门票" },
-      fakeApi(store) as never,
-      {} as never,
-    );
+    const result = await invoke(tool, { query: "泰山 门票" });
 
-    expect(store.research.searchCount).toBe(1);
-    expect(store.research.fetchCount).toBe(1);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining(hits3[1].url),
-    );
+    const research = ctx.store.getDoc(TRIP_ID, "research");
+    expect(research.searchCount).toBe(1);
+    expect(research.fetchCount).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(hits3[1].url));
     errorSpy.mockRestore();
-    const text = (result.output as Array<{ text: string }>)[0].text;
+    const text = textOf(result);
 
     const failedId = sourceIdForUrl(hits3[1].url);
-    const failedBlock = text
-      .split("\n[")
-      .find((block) => block.startsWith(`${failedId}]`));
+    const failedBlock = text.split("\n[").find((block) => block.startsWith(`${failedId}]`));
     expect(failedBlock).toContain("fetched: no");
     expect(failedBlock).toContain(hits3[1].snippet);
 
@@ -266,25 +168,37 @@ describe("deepseek_search", () => {
   it("does not re-fetch already-fetched sources on a cache hit", async () => {
     const search = vi.fn(async () => [hits3[1], hits3[2]]);
     const fetch = vi.fn(async (url: string) => fetchResult(url));
-    const store = docs();
-    const api = fakeApi(store);
-    const tool = searchTool({ search, fetch } as unknown as DeepSeekClient);
+    const { ctx, tool } = setup({ search, fetch });
 
-    await tool.execute({ query: "泰山 门票" }, api as never, {} as never);
+    await invoke(tool, { query: "泰山 门票" });
     expect(fetch).toHaveBeenCalledTimes(2);
-    await tool.execute({ query: "泰山 门票" }, api as never, {} as never);
+    await invoke(tool, { query: "泰山 门票" });
 
     expect(search).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(store.research.fetchCount).toBe(2);
+    expect(ctx.store.getDoc(TRIP_ID, "research").fetchCount).toBe(2);
+  });
+
+  it("returns an error result when the search cap is reached", async () => {
+    const search = vi.fn(async () => [hit]);
+    const { ctx, tool } = setup({ search, fetch: vi.fn() });
+    ctx.store.setDoc(TRIP_ID, "research", { searchCount: 40, fetchCount: 0 });
+
+    const result = await invoke(tool, { query: "新的查询" });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toBe("search cap reached");
+    expect(search).not.toHaveBeenCalled();
   });
 });
 
 describe("deepseek_fetch", () => {
-  function fetchedStore(): Docs {
-    const store = docs();
-    addSearchToSources(store.sources, "泰山 门票", [hit], new Date("2026-10-19"));
-    return store;
+  function fetchSetup(fetch: unknown) {
+    const ctx = makeContext({ deepseek: { search: vi.fn(), fetch } as unknown as DeepSeekClient });
+    const sources = ctx.store.getDoc(TRIP_ID, "sources");
+    addSearchToSources(sources, "泰山 门票", [hit], new Date("2026-10-19"));
+    ctx.store.setDoc(TRIP_ID, "sources", sources);
+    return { ctx, tool: createFetchTool(ctx) };
   }
 
   it("returns the source id and truncated page content to the model", async () => {
@@ -293,63 +207,38 @@ describe("deepseek_fetch", () => {
       url: hit.url,
       content: "红门开始徒步，中天门索道 100 元。",
     }));
-    const tool = createFetchTool({
-      now: () => new Date("2026-10-19T00:00:00Z"),
-      deepseek: { search: vi.fn(), fetch } as unknown as DeepSeekClient,
-      generateSketch: async () => ({ svg: "", status: "ok" }),
-      caps: { search: 40, fetch: 30 },
-    });
-    const store = fetchedStore();
-    const result = await tool.execute({ url: hit.url }, fakeApi(store) as never, {} as never);
-    const text = (result.output as Array<{ text: string }>)[0].text;
-    const sourceId = (result.structuredOutput as { sourceId: string }).sourceId;
+    const { ctx, tool } = fetchSetup(fetch);
+
+    const result = await invoke(tool, { url: hit.url });
+    const text = textOf(result);
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(text).toContain(`[${sourceId}]`);
+    expect(text).toContain(`[${sourceIdForUrl(hit.url)}]`);
     expect(text).toContain("红门开始徒步");
     expect(text).toContain(hit.url);
     expect(text).toContain("fetchedAt: 2026-10-19T00:00:00.000Z");
-    expect(store.research.fetchCount).toBe(1);
+    expect(ctx.store.getDoc(TRIP_ID, "research").fetchCount).toBe(1);
   });
 
   it("fetches the same URL only once", async () => {
-    const fetch = vi.fn(async () => ({
-      title: hit.title,
-      url: hit.url,
-      content: "正文",
-    }));
-    const tool = createFetchTool({
-      now: () => new Date("2026-10-19T00:00:00Z"),
-      deepseek: { search: vi.fn(), fetch } as unknown as DeepSeekClient,
-      generateSketch: async () => ({ svg: "", status: "ok" }),
-      caps: { search: 40, fetch: 30 },
-    });
-    const store = fetchedStore();
-    const api = fakeApi(store);
+    const fetch = vi.fn(async () => ({ title: hit.title, url: hit.url, content: "正文" }));
+    const { ctx, tool } = fetchSetup(fetch);
 
-    await tool.execute({ url: hit.url }, api as never, {} as never);
-    await tool.execute({ url: `${hit.url}/#section` }, api as never, {} as never);
+    await invoke(tool, { url: hit.url });
+    await invoke(tool, { url: `${hit.url}/#section` });
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(store.research.fetchCount).toBe(1);
+    expect(ctx.store.getDoc(TRIP_ID, "research").fetchCount).toBe(1);
   });
 
   it("rejects a URL that did not come from search", async () => {
     const fetch = vi.fn();
-    const tool = createFetchTool({
-      now: () => new Date("2026-10-19T00:00:00Z"),
-      deepseek: { search: vi.fn(), fetch } as unknown as DeepSeekClient,
-      generateSketch: async () => ({ svg: "", status: "ok" }),
-      caps: { search: 40, fetch: 30 },
-    });
+    const ctx = makeContext({ deepseek: { search: vi.fn(), fetch } as unknown as DeepSeekClient });
 
-    await expect(
-      tool.execute(
-        { url: "https://evil.example/steal" },
-        fakeApi(docs()) as never,
-        {} as never,
-      ),
-    ).rejects.toThrow("must come from a deepseek_search result");
+    const result = await invoke(createFetchTool(ctx), { url: "https://evil.example/steal" });
+
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("must come from a deepseek_search result");
     expect(fetch).not.toHaveBeenCalled();
   });
 });

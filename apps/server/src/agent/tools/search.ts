@@ -1,10 +1,6 @@
-import {
-  defineTool,
-  type ToolExecutionApi,
-} from "@earendil-works/pi-durable";
-import { Type } from "@earendil-works/pi-ai";
-import type { Context } from "@earendil-works/chord/context";
+import { tool } from "@anthropic-ai/claude-agent-sdk";
 import type { TripSource, TripSources } from "@pi-demo/shared";
+import { z } from "zod";
 import type { FetchResult, SearchOptions } from "../../deepseek/client";
 import { formatSearchResults } from "../../research/format";
 import {
@@ -12,21 +8,17 @@ import {
   addSearchToSources,
   normalizeUrl,
 } from "../../research/sources";
-import {
-  TripResearchDoc,
-  TripSearchCacheDoc,
-  TripSourcesDoc,
-} from "../../trips/docs";
-import type { TravelDeps } from "../deps";
+import type { ToolContext } from "../deps";
 import { enforceCap } from "./caps";
+import { guarded, textResult } from "./helpers";
 
-const parameters = Type.Object({
-  query: Type.String({ description: "Search query" }),
-  count: Type.Optional(Type.Number({ description: "Maximum number of results to return" })),
-  oriQuestion: Type.Optional(Type.String({ description: "The user's original question" })),
-  localization: Type.Optional(Type.String({ description: "Language or locale for results" })),
-  needContent: Type.Optional(Type.Boolean({ description: "Ask for page content in the results" })),
-});
+const shape = {
+  query: z.string().describe("Search query"),
+  count: z.number().optional().describe("Maximum number of results to return"),
+  oriQuestion: z.string().optional().describe("The user's original question"),
+  localization: z.string().optional().describe("Language or locale for results"),
+  needContent: z.boolean().optional().describe("Ask for page content in the results"),
+};
 
 const AUTO_FETCH_LIMIT = 2;
 
@@ -91,9 +83,7 @@ function withFetchedIds(sourceIds: string[], fetched: TripSource[]): string[] {
  * lead and never fails the search.
  */
 async function autoFetch(
-  api: ToolExecutionApi,
-  context: Context,
-  deps: TravelDeps,
+  ctx: ToolContext,
   now: Date,
   candidates: TripSource[],
   remaining: number,
@@ -106,7 +96,7 @@ async function autoFetch(
 
   for (const target of targets) {
     try {
-      const raw = await deps.deepseek.fetch(target.url);
+      const raw = await ctx.deps.deepseek.fetch(target.url);
       // Older/alternate response shapes may omit title/url. Keep the requested
       // URL as the identity instead of failing the whole search.
       const result: FetchResult = {
@@ -119,11 +109,10 @@ async function autoFetch(
               ? raw.url
               : target.url,
       };
-      const source = await api.commit(async (tx) => {
-        const research = await tx.doc(TripResearchDoc, api.conversationId);
-        // A concurrent call may have reached the cap while this request ran.
-        if (research.fetchCount >= deps.caps.fetch) return undefined;
-        const stored = await tx.doc(TripSourcesDoc, api.conversationId);
+      const source = ctx.store.transaction(() => {
+        const research = ctx.store.getDoc(ctx.tripId, "research");
+        if (research.fetchCount >= ctx.deps.caps.fetch) return undefined;
+        const stored = ctx.store.getDoc(ctx.tripId, "sources");
         const id = addFetchToSource(stored, result, now);
         research.fetchCount += 1;
         const attemptKey = normalizeUrl(target.url);
@@ -131,8 +120,10 @@ async function autoFetch(
           ...(research.fetchAttempts ?? {}),
           [attemptKey]: (research.fetchAttempts?.[attemptKey] ?? 0) + 1,
         };
+        ctx.store.setDoc(ctx.tripId, "sources", stored);
+        ctx.store.setDoc(ctx.tripId, "research", research);
         return { ...stored[id] };
-      }, context);
+      });
       if (source !== undefined) fetched.push(source);
     } catch (error) {
       // The snippet remains a lead; the search itself still succeeds, but the
@@ -148,123 +139,69 @@ async function autoFetch(
   return fetched;
 }
 
-export function createSearchTool(deps: TravelDeps) {
-  return defineTool({
-    name: "deepseek_search",
-    description:
-      "Search the web with DeepSeek, store the results as trip sources, and fetch the top two pages for verified content.",
-    parameters,
-    structuredOutputSchema: Type.Object({ sourceIds: Type.Array(Type.String()) }),
-    replay: "safe",
-    execute: async (args, api, context) => {
-      const options: SearchOptions = {
-        count: args.count,
-        oriQuestion: args.oriQuestion,
-        localization: args.localization,
-        needContent: args.needContent,
-      };
-      const cacheKey = searchCacheKey(args.query, options);
-      const now = deps.now();
-
-      const cached = await api.snapshot(
-        TripSearchCacheDoc,
-        api.conversationId,
-        context,
-      );
-      const currentSources =
-        (await api.snapshot(TripSourcesDoc, api.conversationId, context)) ??
-        ({} as TripSources);
-      const current = await api.snapshot(
-        TripResearchDoc,
-        api.conversationId,
-        context,
-      );
-      const fetchRemaining = deps.caps.fetch - (current?.fetchCount ?? 0);
-
-      const cachedIds = cached?.[cacheKey]?.sourceIds ?? [];
-      if (
-        cachedIds.length > 0 &&
-        cachedIds.every((id) => currentSources[id] !== undefined)
-      ) {
-        // A cache hit is free for search, but may still verify top results the
-        // previous attempt could not fetch, subject to the fetch cap.
-        const candidates = cachedIds
-          .map((id) => currentSources[id])
-          .filter((source): source is TripSource => source !== undefined);
-        const fetched = await autoFetch(
-          api,
-          context,
-          deps,
-          now,
-          candidates,
-          fetchRemaining,
-        );
-        const outputSources = mergeSources(currentSources, fetched);
-        const outputIds = withFetchedIds(cachedIds, fetched);
-        return {
-          output: [
-            {
-              type: "text" as const,
-              text: formatSearchResults(args.query, outputIds, outputSources, now),
-            },
-          ],
-          structuredOutput: { sourceIds: cachedIds },
+export function createSearchTool(ctx: ToolContext) {
+  return tool(
+    "deepseek_search",
+    "Search the web with DeepSeek, store the results as trip sources, and fetch the top two pages for verified content.",
+    shape,
+    (args) =>
+      guarded(async () => {
+        const options: SearchOptions = {
+          count: args.count,
+          oriQuestion: args.oriQuestion,
+          localization: args.localization,
+          needContent: args.needContent,
         };
-      }
+        const cacheKey = searchCacheKey(args.query, options);
+        const now = ctx.deps.now();
 
-      enforceCap(current?.searchCount ?? 0, deps.caps.search, "search");
+        const cached = ctx.store.getDoc(ctx.tripId, "searchCache");
+        const currentSources = ctx.store.getDoc(ctx.tripId, "sources");
+        const current = ctx.store.getDoc(ctx.tripId, "research");
+        const fetchRemaining = ctx.deps.caps.fetch - current.fetchCount;
 
-      const hits = await deps.deepseek.search(args.query, options);
+        const cachedIds = cached[cacheKey]?.sourceIds ?? [];
+        if (cachedIds.length > 0 && cachedIds.every((id) => currentSources[id] !== undefined)) {
+          // A cache hit is free for search, but may still verify top results the
+          // previous attempt could not fetch, subject to the fetch cap.
+          const candidates = cachedIds
+            .map((id) => currentSources[id])
+            .filter((source): source is TripSource => source !== undefined);
+          const fetched = await autoFetch(ctx, now, candidates, fetchRemaining);
+          const outputSources = mergeSources(currentSources, fetched);
+          const outputIds = withFetchedIds(cachedIds, fetched);
+          return textResult(formatSearchResults(args.query, outputIds, outputSources, now));
+        }
 
-      const { sourceIds, candidates } = await api.commit(async (tx) => {
-        const research = await tx.doc(TripResearchDoc, api.conversationId);
-        enforceCap(research.searchCount, deps.caps.search, "search");
-        const stored = await tx.doc(TripSourcesDoc, api.conversationId);
-        const ids = addSearchToSources(stored, args.query, hits, now);
-        const cache = await tx.doc(TripSearchCacheDoc, api.conversationId);
-        cache[cacheKey] = { sourceIds: ids, at: now.toISOString() };
-        research.searchCount += 1;
-        research.searchAttempts = {
-          ...(research.searchAttempts ?? {}),
-          [cacheKey]: (research.searchAttempts?.[cacheKey] ?? 0) + 1,
-        };
-        // The document is a draft owned by this commit: copy plain values out
-        // rather than reading the settled overlay later.
-        return {
-          sourceIds: ids,
-          candidates: ids.map((id) => ({ ...stored[id] })),
-        };
-      }, context);
+        enforceCap(current.searchCount, ctx.deps.caps.search, "search");
 
-      const fetched = await autoFetch(
-        api,
-        context,
-        deps,
-        now,
-        candidates,
-        fetchRemaining,
-      );
-      // Committed read after autoFetch, so the output includes both the search
-      // results and the newly fetched content.
-      const latest = await api.snapshot(
-        TripSourcesDoc,
-        api.conversationId,
-        context,
-      );
-      const fallback: TripSources = {};
-      for (const candidate of candidates) fallback[candidate.id] = candidate;
-      const outputSources = mergeSources(latest ?? fallback, fetched);
-      const outputIds = withFetchedIds(sourceIds, fetched);
+        const hits = await ctx.deps.deepseek.search(args.query, options);
 
-      return {
-        output: [
-          {
-            type: "text" as const,
-            text: formatSearchResults(args.query, outputIds, outputSources, now),
-          },
-        ],
-        structuredOutput: { sourceIds },
-      };
-    },
-  });
+        const { sourceIds, candidates } = ctx.store.transaction(() => {
+          const research = ctx.store.getDoc(ctx.tripId, "research");
+          enforceCap(research.searchCount, ctx.deps.caps.search, "search");
+          const stored = ctx.store.getDoc(ctx.tripId, "sources");
+          const ids = addSearchToSources(stored, args.query, hits, now);
+          const cache = ctx.store.getDoc(ctx.tripId, "searchCache");
+          cache[cacheKey] = { sourceIds: ids, at: now.toISOString() };
+          research.searchCount += 1;
+          research.searchAttempts = {
+            ...(research.searchAttempts ?? {}),
+            [cacheKey]: (research.searchAttempts?.[cacheKey] ?? 0) + 1,
+          };
+          ctx.store.setDoc(ctx.tripId, "sources", stored);
+          ctx.store.setDoc(ctx.tripId, "searchCache", cache);
+          ctx.store.setDoc(ctx.tripId, "research", research);
+          return { sourceIds: ids, candidates: ids.map((id) => ({ ...stored[id] })) };
+        });
+
+        const fetched = await autoFetch(ctx, now, candidates, fetchRemaining);
+        // Committed read after autoFetch, so the output includes both the search
+        // results and the newly fetched content.
+        const outputSources = mergeSources(ctx.store.getDoc(ctx.tripId, "sources"), fetched);
+        const outputIds = withFetchedIds(sourceIds, fetched);
+
+        return textResult(formatSearchResults(args.query, outputIds, outputSources, now));
+      }),
+  );
 }
