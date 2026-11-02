@@ -4028,6 +4028,12 @@ for (const dir of [paths.root, paths.workspace, paths.sketchWorkspace]) {
   mkdirSync(dir, { recursive: true });
 }
 
+// The SDK adapter resolves session transcripts from the process environment when
+// it validates `resume`, so the config dir must be visible there too, not only in
+// the per-call env handed to the CLI. Without this, the second message in a trip
+// fails with "Original SDK session is unavailable".
+process.env.CLAUDE_CONFIG_DIR = paths.claudeConfigDir;
+
 const store = TripStore.open(paths.travelDb);
 
 // Must happen before the runner opens its database: an unclean shutdown leaves
@@ -4195,6 +4201,20 @@ export function TravelChat({
 
 ```bash
 git rm "apps/web/app/api/copilotkit/[[...slug]]/route.ts" apps/web/lib/agent-config.ts
+```
+
+`apps/web/next.config.ts` 增加 `compress: false`（Next 默认开启压缩，会把经 `/backend` 重写的 SSE 攒到结束才一次性发出；关掉后逐块到达）：
+
+```ts
+const nextConfig: NextConfig = {
+  // The CopilotKit runtime streams SSE through the /backend rewrite; gzip
+  // buffering would deliver the whole run in one chunk at the end.
+  compress: false,
+  transpilePackages: ["@pi-demo/shared"],
+  async rewrites() {
+    return [{ source: "/backend/:path*", destination: `${apiUrl}/:path*` }];
+  },
+};
 ```
 
 `apps/web/components/TravelChat.test.tsx` 整个文件替换为:

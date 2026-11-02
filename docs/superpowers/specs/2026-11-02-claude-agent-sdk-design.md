@@ -195,6 +195,8 @@ runner 的两个事实（读 `@copilotkit/sqlite-runner` 源码得到）：
 9. **适配器 0.0.8 的 `clone()` 缺陷（探针已实证）**：`AbstractAgent.clone()` 不跑构造函数，适配器私有字段在克隆上为 `undefined`，而 CopilotKit 每个请求都会克隆，`run()` 首行即抛 `Cannot read properties of undefined (reading 'has')`。修法是在子类里覆盖 `clone()` 重建这四个字段（`bindings`、`admitted`、`activeQueries`、`sessions`），探针验证后 5a–5d 全通过。升级适配器时应复查该缺陷是否已修。
 10. **并发 run 的拒绝对客户端不可见**：HTTP 200 + 空 SSE，`Thread already running` 只出现在服务端日志。前端必须靠自身 busy 状态禁用输入，不能依赖错误事件。
 11. **`connect` 需要 `{ threadId, runId, messages: [] }`**，只给 `threadId` 不够（探针记录）。验收脚本按此构造。
+12. **`CLAUDE_CONFIG_DIR` 必须同时写进进程环境（已实证）**：适配器校验 `resume` 时读的是进程 env，只放在每次调用的子进程 env 里会让同一行程的第二条消息失败（`Original SDK session is unavailable`）。`main.ts` 启动时设置。
+13. **Next 的压缩会破坏 SSE（已实证）**：默认 `compress: true` 把经 `/backend` 重写的流攒到结束才发，必须 `compress: false`。
 
 ## 10. 留给实现者的决定
 
