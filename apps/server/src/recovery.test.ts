@@ -4,8 +4,9 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { EMPTY, Observable, Subject, type Observable as Obs } from "rxjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
+import { EventType, type AbstractAgent, type BaseEvent } from "@ag-ui/client";
 import type { AgentRunnerRunRequest } from "@copilotkit/runtime/v2";
+import { TravelAgent } from "./agent/travel-agent";
 import { TripStore } from "./store/trip-store";
 import { RESUME_NOTE, clearStaleRunState, recoverInterruptedRuns } from "./recovery";
 
@@ -197,6 +198,81 @@ describe("recoverInterruptedRuns", () => {
 
     expect(started).toEqual(["a", "b"]);
     expect(store.getInflight("a")).toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("timed out"));
+  });
+
+  it("times out a run that stalls after its first event and moves on", async () => {
+    const store = storeWithRun("a");
+    store.beginRun({ tripId: "b", runId: "old-b", userMessageId: "m1", userText: "请求 b", startedAt: "2026-10-19T00:00:01.000Z" });
+    const started: string[] = [];
+    const run = vi.fn((request: { threadId: string }) => {
+      started.push(request.threadId);
+      return request.threadId === "a"
+        ? new Observable<BaseEvent>((subscriber) => {
+            // The run starts, then goes silent without settling.
+            subscriber.next({
+              type: EventType.RUN_STARTED,
+              threadId: "a",
+              runId: "stalled",
+            } as BaseEvent);
+          })
+        : EMPTY;
+    });
+    const log = vi.fn();
+
+    await recoverInterruptedRuns({ ...options(store, run), timeoutMs: 10, log });
+
+    expect(started).toEqual(["a", "b"]);
+    expect(store.getInflight("a")).toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("timed out"));
+  });
+
+  it("drops the row of a real agent run that stalls mid-stream", async () => {
+    const store = TripStore.open(":memory:");
+    store.upsertTrip({
+      tripId: "t1",
+      conversationId: "t1",
+      title: "x",
+      destination: "泰山",
+      startDate: "2026-10-26",
+      days: 3,
+      updatedAt: NOW.toISOString(),
+      status: "active",
+    });
+    store.beginRun({ tripId: "t1", runId: "old", userMessageId: "m0", userText: "最初的请求", startedAt: NOW.toISOString() });
+    const agent = new TravelAgent({
+      store,
+      now: () => NOW,
+      buildSystemPrompt: () => "p",
+      createAdapter: () => ({
+        run: () =>
+          new Observable<BaseEvent>((subscriber) => {
+            subscriber.next({
+              type: EventType.RUN_STARTED,
+              threadId: "t1",
+              runId: "stalled",
+            } as BaseEvent);
+          }),
+        interrupt: async () => {},
+      }),
+    });
+    // A runner that does not tear the agent run down when its own stream ends,
+    // so only the recovery pass can clear the row the agent rewrote.
+    const runner = {
+      run: (request: AgentRunnerRunRequest) =>
+        new Observable<BaseEvent>((subscriber) => {
+          (request.agent as TravelAgent).run(request.input).subscribe({
+            next: (event) => subscriber.next(event),
+            error: (error: unknown) => subscriber.error(error),
+            complete: () => subscriber.complete(),
+          });
+        }),
+    };
+    const log = vi.fn();
+
+    await recoverInterruptedRuns({ store, runner, agent, now: () => NOW, newId, timeoutMs: 10, log });
+
+    expect(store.getInflight("t1")).toBeUndefined();
     expect(log).toHaveBeenCalledWith(expect.stringContaining("timed out"));
   });
 });

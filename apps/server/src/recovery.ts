@@ -83,9 +83,12 @@ export async function recoverInterruptedRuns(options: RecoverOptions): Promise<v
     }
 
     store.bumpAttempts(current.tripId);
+    // The agent rewrites the row to this id when the run starts, so keep it
+    // here: the post-run guard must recognise both ids as ours.
+    const recoveryRunId = newId();
     const input: RunAgentInput = {
       threadId: current.tripId,
-      runId: newId(),
+      runId: recoveryRunId,
       state: {},
       tools: [],
       context: [],
@@ -100,7 +103,9 @@ export async function recoverInterruptedRuns(options: RecoverOptions): Promise<v
       await lastValueFrom(
         runner
           .run({ threadId: current.tripId, agent: agent.clone(), input })
-          .pipe(timeout({ first: timeoutMs })),
+          // `each` arms at subscription and after every event, so a run that
+          // stalls before or after RUN_STARTED is bounded too.
+          .pipe(timeout({ each: timeoutMs })),
         { defaultValue: undefined },
       );
     } catch (error) {
@@ -111,10 +116,13 @@ export async function recoverInterruptedRuns(options: RecoverOptions): Promise<v
           `Recovery run for ${current.tripId} failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      // A run that started has already recorded its fault and cleared its row;
-      // one the runner refused, or one that timed out, may leave the original
-      // row behind. Only the row this pass read is ours to drop.
-      if (store.getInflight(current.tripId)?.runId === current.runId) store.endRun(current.tripId);
+      // A run that never started leaves the row this pass read; one that
+      // started rewrites it to the recovery id. A newer user run has a
+      // different id, so it is never ours to drop.
+      const after = store.getInflight(current.tripId);
+      if (after !== undefined && (after.runId === current.runId || after.runId === recoveryRunId)) {
+        store.endRun(current.tripId);
+      }
     }
   }
 }
