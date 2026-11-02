@@ -19,7 +19,7 @@ const createTripSchema = {
 
 /** Maps the service's unknown-trip errors to HTTP 404. */
 export function isNotFoundError(error: unknown): boolean {
-  return error instanceof Error && /^(Trip|Conversation) not found:/.test(error.message);
+  return error instanceof Error && /^Trip not found:/.test(error.message);
 }
 
 export function registerTripRoutes(app: FastifyInstance, service: TripServiceApi): void {

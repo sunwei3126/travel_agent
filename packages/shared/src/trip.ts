@@ -89,23 +89,6 @@ export type TripSource = {
 
 export type TripSources = Record<string, TripSource>;
 
-export type TranscriptToolCall = {
-  id: string;
-  name: string;
-  arguments: string;
-};
-
-export type TranscriptEntry = {
-  id: string;
-  role: "user" | "assistant" | "tool" | "reasoning";
-  content: string;
-  name?: string;
-  toolCallId?: string;
-  toolCalls?: TranscriptToolCall[];
-  error?: string;
-  encryptedValue?: string;
-};
-
 export type TripIndexEntry = {
   tripId: string;
   conversationId: string;
