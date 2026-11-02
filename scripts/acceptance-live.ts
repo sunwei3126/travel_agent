@@ -13,6 +13,13 @@ const POLL_INTERVAL_MS = 3000;
 const START_TIMEOUT_MS = 60_000;
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
+/**
+ * Closes the run's SSE socket when the acceptance ends. Without it the drained
+ * stream keeps the socket (and therefore Node) alive after a failed assertion,
+ * so a timeout would hang instead of exiting.
+ */
+const runAbort = new AbortController();
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -36,10 +43,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** Starts a run through the CopilotKit runtime; progress is read from the trip snapshot. */
-async function submitRun(tripId: string, content: string): Promise<void> {
+/**
+ * Starts a run through the CopilotKit runtime; progress is read from the trip
+ * snapshot. The SSE body is drained in the background so the socket stays open
+ * for the whole run, and `signal` closes it when the acceptance ends.
+ */
+async function submitRun(
+  tripId: string,
+  content: string,
+  signal: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${API_URL}/api/copilotkit/agent/travel/run`, {
     method: "POST",
+    signal,
     headers: { "content-type": "application/json", accept: "text/event-stream" },
     body: JSON.stringify({
       threadId: tripId,
@@ -58,8 +74,9 @@ async function submitRun(tripId: string, content: string): Promise<void> {
         .catch(() => "")}`,
     );
   }
-  // Drain in the background so the connection stays open while the run works.
-  void response.body.pipeTo(new WritableStream()).catch(() => {});
+  void response.body
+    .pipeTo(new WritableStream(), { signal })
+    .catch(() => {});
 }
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -102,7 +119,7 @@ async function main(): Promise<void> {
   });
   const tripId = encodeURIComponent(trip.tripId);
 
-  await submitRun(trip.tripId, BRIEF);
+  await submitRun(trip.tripId, BRIEF, runAbort.signal);
 
   const getSnapshot = (): Promise<TripSnapshot> =>
     request<TripSnapshot>(`/api/trips/${tripId}`);
@@ -200,7 +217,14 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.exitCode = 1;
+    // Flush the message, then exit hard: a lingering socket or timer must never
+    // turn a failed acceptance (start timeout, run timeout) into a hang.
+    process.stderr.write(`${message}\n`, () => process.exit(1));
+  })
+  .finally(() => {
+    runAbort.abort();
+  });

@@ -787,6 +787,16 @@
 <body>
 <a class="skip-link" href="#main">跳到正文</a>
 
+<div style="margin:0;padding:12px 20px;background:#a63a2b;color:#fff;font:14px/1.5 'PingFang SC','Microsoft YaHei',system-ui,sans-serif;">
+  <strong>2026-11-02 更新：本页是历史快照。</strong>
+  它描述的是 2026-10-20 的 pi-durable 架构（旧的 harness 层、自写的 AG-UI 映射、
+  独立的 AG-UI SSE 端点、web 端的 CopilotKit route、pi-durable 文档模型），这些模块与端点已被
+  Claude Agent SDK + CopilotKit 运行时取代，文中的架构图与失败模式叙述仍属历史。
+  “怎么改”清单与验证命令已按当前实现更新。
+  当前实现请看 <a href="../../README.md" style="color:#fff;text-decoration:underline;">README</a> 与
+  <a href="../superpowers/specs/2026-11-02-claude-agent-sdk-design.md" style="color:#fff;text-decoration:underline;">2026-11-02 设计</a>。
+</div>
+
 <header class="masthead">
   <svg class="contours" viewBox="0 0 1440 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
     <g fill="none" stroke="currentColor" stroke-width="1">
@@ -889,11 +899,11 @@
               <!-- fastify -->
               <rect x="502" y="86" width="208" height="166" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
               <rect x="502" y="86" width="208" height="5" fill="var(--pine)" stroke="none"/>
-              <text x="520" y="116" stroke="none" fill="var(--ink)" font-size="14" font-weight="600">Fastify / TravelService</text>
-              <text x="520" y="140" stroke="none" fill="var(--ink-soft)" font-size="11">POST /agui?tripId=</text>
-              <text x="520" y="159" stroke="none" fill="var(--ink-soft)" font-size="11">GET /api/trips/:id[/transcript]</text>
-              <text x="520" y="180" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">submitMessage · watchEvents</text>
-              <text x="520" y="198" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">mapper: PiEvent → AG-UI</text>
+              <text x="520" y="116" stroke="none" fill="var(--ink)" font-size="14" font-weight="600">Fastify runtime</text>
+              <text x="520" y="140" stroke="none" fill="var(--ink-soft)" font-size="11">POST /api/copilotkit/agent/travel/run</text>
+              <text x="520" y="159" stroke="none" fill="var(--ink-soft)" font-size="11">GET /api/trips · /api/trips/:id</text>
+              <text x="520" y="180" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">TravelAgent · SqliteAgentRunner</text>
+              <text x="520" y="198" stroke="none" fill="var(--ink-faint)" font-size="10" font-family="var(--mono)">adapter: SDK → AG-UI</text>
               <text x="520" y="219" stroke="none" fill="var(--ink-faint)" font-size="10">RUN_STARTED · SNAPSHOT · RUN_FINISHED</text>
               <text x="520" y="238" stroke="none" fill="var(--ink-faint)" font-size="10">负责把增量事件投影成可消费的流</text>
 
@@ -916,7 +926,7 @@
               <text x="260" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="middle" font-family="var(--mono)">agent/run</text>
 
               <path d="M436 150 H 502" marker-end="url(#arrow)"/>
-              <text x="469" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="middle" font-family="var(--mono)">/agui</text>
+              <text x="469" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="middle" font-family="var(--mono)">run</text>
 
               <path d="M710 150 H 786" marker-end="url(#arrow)"/>
               <text x="780" y="140" stroke="none" fill="var(--ink-faint)" font-size="10" text-anchor="end" font-family="var(--mono)">watch + submit</text>
@@ -961,9 +971,9 @@
         <span class="section-kicker">02 · Request lifecycle</span>
         <h2>一次发送，如何变成屏幕上的折叠块</h2>
         <p class="section-intro">
-          先看“首次发送”。这里最容易误解的是：前端并没有直接调用 Fastify；
-          它调用 Next 的 per-trip CopilotKit runtime，运行时再把 AG-UI 请求转给
-          <code>/agui</code>。切换下面的场景，观察每条路径。
+          先看“首次发送”。这里最容易误解的是：前端经 Next 的 <code>/backend</code> 重写直连
+          Fastify 的 CopilotKit runtime（<code>/api/copilotkit/agent/travel/run</code>），
+          运行时再把 AG-UI 请求交给 <code>TravelAgent</code>。切换下面的场景，观察每条路径。
         </p>
       </div>
 
@@ -996,7 +1006,7 @@
                 <rect x="226" y="58" width="148" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
                 <text x="300" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Next runtime</text>
                 <rect x="430" y="58" width="140" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
-                <text x="500" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Fastify /agui</text>
+                <text x="500" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">Fastify runtime</text>
                 <rect x="632" y="58" width="136" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
                 <text x="700" y="80" stroke="none" fill="var(--ink)" font-size="11" text-anchor="middle">pi-durable</text>
                 <rect x="828" y="58" width="144" height="34" fill="var(--paper-raised)" stroke="var(--line-strong)"/>
@@ -1009,7 +1019,7 @@
                 <text x="200" y="116" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">POST /api/copilotkit/:id</text>
 
                 <path d="M300 160 H 500" marker-end="url(#arrow2)"/>
-                <text x="400" y="152" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">HttpAgent → /agui?tripId</text>
+                <text x="400" y="152" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">TravelAgent.run</text>
 
                 <path d="M500 196 H 700" marker-end="url(#arrow2)"/>
                 <text x="600" y="188" stroke="none" fill="var(--ink-soft)" font-size="10" text-anchor="middle" font-family="var(--mono)">watchEvents + submitMessage</text>
@@ -1080,15 +1090,15 @@
           </svg>
         </div>
         <p class="scenario-caption" id="scenario-caption">
-          首次发送：agent/run 进入 Next runtime，HttpAgent 调 Fastify /agui；Fastify 先挂 watcher 再提交消息，随后写 RUN_STARTED、两个快照和实时事件。
+          首次发送：agent/run 进入 Fastify 的 CopilotKit runtime，runtime 交给 TravelAgent；TravelAgent 构造一次 Claude Agent SDK run，边跑边写 RUN_STARTED、消息快照和实时事件，结束时写 RUN_FINISHED。
         </p>
       </div>
 
       <p>
-        记住两个边界：<strong>Next 运行时是无状态桥</strong>，它按 trip 构造 HttpAgent；
-        <strong>Fastify 的 <code>/agui</code> 是唯一启动 run 的地方</strong>，它先挂 watcher、再提交消息，
-        这样 <code>run_start</code> 和 <code>run_end</code> 都不会丢。快照里的用户消息由
-        <code>pending-user-&lt;runId&gt;</code> 补上，避免 MESSAGES_SNAPSHOT 覆盖刚发送的消息。
+        记住两个边界：<strong>Next 只是一层重写</strong>，它把 <code>/backend</code> 代理到 Fastify；
+        <strong>Fastify 的 CopilotKit runtime 是唯一启动 run 的地方</strong>：<code>SqliteAgentRunner</code>
+        记录 run 状态与历史，<code>TravelAgent</code> 负责把 SDK 事件转成 AG-UI 事件。
+        断开 SSE 不会终止 run；刷新时前端用 <code>connect</code> 重放该 thread 的历史并重新挂上。
       </p>
     </section>
 
@@ -1208,18 +1218,17 @@
             <tr><th>路径</th><th>职责</th><th>先看什么</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>packages/shared/src/trip.ts</code></td><td>共享类型：TripBrief / TripPlan / DayCard / Claim / TripSnapshot / TranscriptEntry</td><td>先建立数据形状</td></tr>
-            <tr><td><code>apps/server/src/agent/</code></td><td>系统提示、6 个工具、extension 注册、深搜/抓取/草图</td><td><code>prompts.ts</code> 与 <code>tools/</code></td></tr>
-            <tr><td><code>apps/server/src/harness/service.ts</code></td><td>TravelService：打开 durable store、创建/读取 trip、提交消息、watch 事件、transcript</td><td>系统的心脏</td></tr>
-            <tr><td><code>apps/server/src/harness/transcript.ts</code></td><td>pi entry → 共享 transcript（thinking / toolCalls / error）</td><td>历史恢复的源头</td></tr>
-            <tr><td><code>apps/server/src/agui/mapper.ts</code></td><td>PiEvent → AG-UI：reasoning、text、tool lifecycle、tool_progress、run_end</td><td>最需要小心的一层</td></tr>
-            <tr><td><code>apps/server/src/http/routes/agui.ts</code></td><td>挂 watcher、提交消息、写 SSE、RUN_STARTED / SNAPSHOT / RUN_FINISHED</td><td>协议入口</td></tr>
-            <tr><td><code>apps/server/src/http/routes/trips.ts</code></td><td>REST：列表、创建、快照、transcript、提交消息</td><td>刷新与验收的入口</td></tr>
-            <tr><td><code>apps/web/app/api/copilotkit/[[...slug]]/route.ts</code></td><td>per-trip CopilotKit runtime，Catch-all，GET/POST/PUT/DELETE</td><td>桥接层</td></tr>
+            <tr><td><code>packages/shared/src/trip.ts</code></td><td>共享类型：TripBrief / TripPlan / DayCard / Claim / TripSnapshot（transcript 类型已随 pi-durable 移除）</td><td>先建立数据形状</td></tr>
+            <tr><td><code>apps/server/src/agent/</code></td><td>系统提示、6 个工具、MCP 注册、深搜/抓取/草图</td><td><code>system-prompt.ts</code> 与 <code>tools/</code></td></tr>
+            <tr><td><code>apps/server/src/agent/travel-agent.ts</code></td><td>TravelAgent：in-flight 记录、会话续跑、fault 与 <code>RUN_ERROR</code></td><td>系统的心脏</td></tr>
+            <tr><td><code>apps/server/src/agent/claude-adapter.ts</code></td><td>适配器工厂：网关环境、thinking 预算、工具 allow-list、clone 修复</td><td>SDK 与运行时的接缝</td></tr>
+            <tr><td><code>apps/server/src/store/trip-store.ts</code></td><td>better-sqlite3 行程存储：docs、sessions、in-flight runs</td><td>耐久状态的唯一入口</td></tr>
+            <tr><td><code>apps/server/src/recovery.ts</code></td><td>启动时清掉残留 run 标记并重发中断的 run</td><td>崩溃恢复</td></tr>
+            <tr><td><code>apps/server/src/runtime.ts</code></td><td>CopilotKit 运行时 + <code>SqliteAgentRunner</code>（<code>/api/copilotkit</code>）</td><td>协议入口</td></tr>
+            <tr><td><code>apps/server/src/http/routes/</code></td><td>CopilotKit handler 与 <code>/api/trips</code> REST</td><td>刷新与验收的入口</td></tr>
             <tr><td><code>apps/web/components/chat/</code></td><td>ChatPanel / ChatMessages / ReasoningBlock / ToolCallBlock</td><td>UI 分组与折叠</td></tr>
             <tr><td><code>apps/web/lib/chat.ts</code></td><td>buildChatSegments、toolStatus、prettyJson、中文工具标签</td><td>纯函数，先读测试</td></tr>
-            <tr><td><code>apps/web/hooks/useTripSnapshot.ts</code></td><td>running 时 2 秒轮询 durable snapshot</td><td>计划卡刷新</td></tr>
-            <tr><td><code>apps/web/components/TripView.tsx</code></td><td>实时 state 与 durable snapshot 的合并、预算、研究进度、faults</td><td>页面编排</td></tr>
+            <tr><td><code>apps/web/components/TripView.tsx</code></td><td>运行中 2 秒轮询 durable snapshot；预算、研究进度、faults</td><td>页面编排</td></tr>
             <tr><td><code>scripts/acceptance-live.ts</code> · <code>scripts/crash-resume.sh</code></td><td>15 分钟真实场景验收；SIGKILL 后恢复验收</td><td>改完核心路径后必跑</td></tr>
           </tbody>
         </table>
@@ -1307,10 +1316,13 @@
       <h3>还有两个运行时坑</h3>
       <div class="two-col">
         <div>
-          <p><strong>“Cannot use a settled overlay”</strong></p>
+          <p><strong>残留的 is_running 标记</strong></p>
           <p>
-            不要从 <code>api.commit()</code> 里拿到 draft 后在 commit 外读取。搜索工具现在在 commit
-            内返回普通副本，并在提交后用新快照构造输出；真实 Harness/SQLite 集成测试覆盖了这条路径。
+            <code>@copilotkit/sqlite-runner</code> 不检查 liveness：进程被 SIGKILL 后
+            <code>run_state.is_running</code> 会留在 1，同一 thread 的后续 run 被拒（
+            <code>Thread already running</code>，客户端只看到 HTTP 200 加空 body）。
+            <code>apps/server/src/recovery.ts</code> 在构造 runner 之前清掉标记，
+            <code>recovery.test.ts</code> 固定这条守护。
           </p>
         </div>
         <div>
@@ -1420,27 +1432,27 @@ npm run dev --workspace @pi-demo/web   # Next :3000</code></pre>
       <div class="command-block">
         <button class="copy" type="button" data-copy="#cmd-test">复制</button>
         <pre id="cmd-test"><code>npm test                                  # server + web + shared
-npx tsc -p apps/server
-npm run build --workspace @pi-demo/web
-npm run probe:thinking                    # magpie 是否真的返回 thinking
-npm run acceptance:live                   # 15 分钟真实场景
-npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
+npm run typecheck                         # server + shared + web
+npm run build                             # 生产构建
+npm run acceptance:live                   # 15 分钟真实场景（需要 DEEPSEEK_API_KEY）
+npm run acceptance:crash                  # SIGKILL 后恢复（需要 DEEPSEEK_API_KEY）</code></pre>
       </div>
 
       <h3>改一个工具时</h3>
       <ol class="plain-list">
-        <li><strong>定义：</strong>在 <code>apps/server/src/agent/tools/</code> 用 <code>defineTool</code> 定义参数、执行和 replay 语义。</li>
-        <li><strong>注册：</strong>在 extension 里注册；更新系统提示，写清楚什么时候调用。</li>
-        <li><strong>输出：</strong>需要模型消费的内容放 <code>output</code>；需要 UI 消费的结构放 <code>structuredOutput</code>。</li>
-        <li><strong>durable：</strong>在 <code>api.commit()</code> 内完成读写；不要带 draft 出 commit。</li>
-        <li><strong>测试：</strong>加工具单测 + 一次真实 Harness/SQLite 集成测试；如果会发事件，补 mapper 测试和 <code>verifyEvents</code>。</li>
+        <li><strong>定义：</strong>在 <code>apps/server/src/agent/tools/</code> 用 SDK 的 <code>tool()</code> 定义参数与执行体，接收 <code>ToolContext</code>（<code>tripId</code> / <code>store</code> / <code>deps</code>），并用 <code>guarded()</code> 把失败转成 <code>isError</code> 工具结果。</li>
+        <li><strong>注册：</strong>在 <code>apps/server/src/agent/mcp.ts</code> 的 <code>buildTravelTools</code> 里加一项；allow-list 由返回的工具自动派生，另外更新 <code>system-prompt.ts</code>。</li>
+        <li><strong>输出：</strong>模型要读的内容用 <code>textResult</code> 返回。</li>
+        <li><strong>durable：</strong>读写都走 <code>ctx.store</code>；多个文档一起改时用 <code>store.transaction</code>。</li>
+        <li><strong>测试：</strong>加工具单测（<code>tools/test-support.ts</code> 造 fake store/deps）；动到 run 生命周期时补 <code>travel-agent.test.ts</code>。</li>
       </ol>
 
-      <h3>改事件映射时</h3>
+      <h3>改 run 生命周期时</h3>
       <ol class="plain-list">
-        <li>先写一个 mapper 单测，构造真实 pi-durable 形状（<code>changes</code>、<code>block</code>、<code>message_end</code>、<code>tool_execution_*</code>）。</li>
-        <li>如果新增/改变生命周期，更新 <code>mapper.protocol.test.ts</code>，让整段事件通过 <code>verifyEvents</code>。</li>
-        <li>确保 <code>run_end</code> 能关闭所有 reasoning / text / tool 实体；否则 <code>RUN_FINISHED</code> 会被拒绝。</li>
+        <li>AG-UI 事件来自 <code>@ag-ui/claude-agent-sdk</code>；<code>TravelAgent</code> 负责转发，并把失败结果改写成 <code>RUN_ERROR</code> 加 fault 记录。</li>
+        <li>会话续跑与 in-flight 记录由 <code>travel-agent.test.ts</code> 固定。</li>
+        <li>适配器选项（网关环境、thinking 预算、allow-list、clone 修复）由 <code>claude-adapter.test.ts</code> 固定；真实 runtime + <code>SqliteAgentRunner</code> 由 <code>runtime.test.ts</code> 覆盖。</li>
+        <li><code>recovery.test.ts</code> 固定 <code>RESUME_NOTE</code> 的字面文本，<code>scripts/crash-resume.sh</code> 靠它 grep；两者一起改。</li>
         <li>如果改变 UI 可见内容，更新 <code>lib/chat.test.ts</code> 和 <code>ChatPanel.test.tsx</code>。</li>
       </ol>
 
@@ -1448,10 +1460,12 @@ npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
         <span class="label">阅读顺序建议</span>
         <p>
           先读 <code>packages/shared/src/trip.ts</code> 建立数据形状 →
-          <code>harness/transcript.ts</code> 看历史怎么来 →
-          <code>agui/mapper.ts</code> 只看测试覆盖的 case →
+          <code>agent/system-prompt.ts</code> 看约束 →
+          <code>agent/travel-agent.ts</code> 看 run 生命周期 →
+          <code>agent/claude-adapter.ts</code> 看 SDK 接缝 →
+          <code>runtime.ts</code> 与 <code>recovery.ts</code> 看历史与续跑 →
           <code>lib/chat.ts</code> 看 UI 怎么分组 →
-          <code>ChatPanel.tsx</code> 看发送/历史/滚动。最后再读 <code>service.ts</code> 的 durable 细节。
+          <code>ChatPanel.tsx</code> 看发送/历史/滚动。
         </p>
       </div>
 
@@ -1570,9 +1584,9 @@ npm run acceptance:crash                  # SIGKILL 后恢复</code></pre>
   var figure = document.getElementById("seq-figure");
   var caption = document.getElementById("scenario-caption");
   var captions = {
-    send: "首次发送：agent/run 进入 Next runtime，HttpAgent 调 Fastify /agui；Fastify 先挂 watcher 再提交消息，随后写 RUN_STARTED、两个快照和实时事件。",
-    tools: "工具执行：pi-durable 调 DeepSeek search/fetch，tool_execution_update 变成 CUSTOM travel.tool_progress，end 变成 TOOL_CALL_RESULT。",
-    resume: "刷新恢复：浏览器并行取 durable snapshot 与 transcript；如果 run 仍在进行，每 2 秒轮询，结束后重新取 transcript。"
+    send: "首次发送：agent/run 进入 Fastify 的 CopilotKit runtime，runtime 交给 TravelAgent；TravelAgent 构造一次 Claude Agent SDK run，边跑边写 RUN_STARTED、消息快照和实时事件，结束时写 RUN_FINISHED。",
+    tools: "工具执行：Claude Code 子进程调用 in-process MCP 的 travel 工具（deepseek_search / deepseek_fetch 等），TOOL_CALL_START / ARGS / RESULT 由适配器发出。",
+    resume: "刷新恢复：前端用 connect 重放该 thread 的历史；如果 run 仍在进行，每 2 秒轮询 GET /api/trips/:id，结束后卡片与聊天都重建。"
   };
 
   figure.querySelectorAll("[data-scenario]").forEach(function (button) {

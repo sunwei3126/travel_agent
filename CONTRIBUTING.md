@@ -11,8 +11,8 @@ clarity, or developer experience are welcome.
 - An Anthropic Messages-compatible model endpoint. The local development
   default is a magpie gateway at `http://127.0.0.1:3425`; any compatible
   endpoint works via the `MAGPIE_*` variables in `.env.example`.
-- A DeepSeek API key for the research tools. Tests do not need one: server tests
-  use a deterministic faux provider.
+- A DeepSeek API key for the research tools. Tests do not need one: they run
+  against in-memory stores and scripted fakes.
 
 ## Setup
 
@@ -52,7 +52,6 @@ npm run build        # production Next.js build
 Optional live checks (require a model endpoint and `DEEPSEEK_API_KEY`):
 
 ```bash
-npm run probe:thinking
 npm run acceptance:live
 npm run acceptance:crash
 ```
@@ -63,37 +62,53 @@ CI runs only the credential-free checks. Live acceptance is a manual step.
 
 | Path | Responsibility |
 | --- | --- |
-| `apps/server/src/agent/` | System prompt, tools, extension registration |
-| `apps/server/src/harness/service.ts` | Durable conversations, submissions, event watching |
-| `apps/server/src/agui/mapper.ts` | Pi events → AG-UI reasoning/text/tool lifecycle |
-| `apps/server/src/http/routes/` | `/agui` SSE and REST routes |
-| `apps/web/app/api/copilotkit/` | Per-trip CopilotKit runtime bridge |
-| `apps/web/components/chat/` | Chat panel, reasoning and tool-call blocks |
-| `apps/web/lib/chat.ts` | Pure grouping/status/format helpers |
-| `packages/shared/src/trip.ts` | Shared trip, plan, source, and transcript types |
-| `scripts/` | Live and crash-resume acceptance scripts |
+| `apps/server/src/agent/travel-agent.ts` | `TravelAgent`: in-flight bookkeeping, session resume, fault recording, `RUN_ERROR`. |
+| `apps/server/src/agent/claude-adapter.ts` | Adapter factory: gateway env, thinking budget, tool allow-list, clone fix. |
+| `apps/server/src/agent/mcp.ts` | In-process MCP server exposing the six travel tools. |
+| `apps/server/src/agent/tools/` | One file per tool (`update-brief`, `emit-day`, `search`, `fetch`, `sketch-day`, `finalize`). |
+| `apps/server/src/agent/system-prompt.ts` | Trip-aware system prompt. |
+| `apps/server/src/store/trip-store.ts` | `better-sqlite3` trip store: docs, sessions, in-flight runs. |
+| `apps/server/src/recovery.ts` | Clears stale runner flags and re-sends interrupted runs at startup. |
+| `apps/server/src/runtime.ts` | CopilotKit runtime with `SqliteAgentRunner` under `/api/copilotkit`. |
+| `apps/server/src/http/routes/` | CopilotKit handler and the `/api/trips` REST routes. |
+| `apps/web/components/chat/` | Chat panel, reasoning and tool-call blocks. |
+| `apps/web/lib/chat.ts` | Pure grouping/status/format helpers. |
+| `packages/shared/src/trip.ts` | Shared trip, brief, plan, and source types. |
+| `scripts/` | Live and crash-resume acceptance scripts. |
 
 `docs/reports/2026-10-20-chat-trace-explainer.html` is a longer visual
-walkthrough of the request lifecycle and failure modes.
+walkthrough of the request lifecycle. It is a historical record of the
+pi-durable architecture; use this file and the README for current practice.
 
 ## Adding a tool
 
-1. Define it with `defineTool` under `apps/server/src/agent/tools/`.
-2. Register it in `apps/server/src/agent/extension.ts`.
-3. Update the system prompt so the model knows when to call it.
-4. Keep durable reads/writes inside `api.commit()`; do not read a settled draft
-   outside the commit.
-5. Add a unit test, and a real Harness/SQLite integration test if the tool
-   persists state or drives an event-visible flow.
+1. Define it with the SDK's `tool()` under `apps/server/src/agent/tools/`,
+   taking a `ToolContext` (`tripId`, `store`, `deps`) and wrapping the body in
+   `guarded(...)` so failures come back as `isError` tool results instead of
+   killing the run.
+2. Register it in `buildTravelTools` in `apps/server/src/agent/mcp.ts`; the
+   model's allow-list is derived from the returned tools, so nothing else needs
+   editing to grant it.
+3. Update `apps/server/src/agent/system-prompt.ts` so the model knows when to
+   call it.
+4. Keep durable reads and writes inside `ctx.store` (use `store.transaction`
+   when several documents change together) so a resumed run sees the same state.
+5. Add a unit test next to the tool; `apps/server/src/agent/tools/test-support.ts`
+   builds the fake store and deps.
 
-## Changing event mapping
+## Changing run behaviour
 
-1. Start with a mapper test that uses the real pi-durable shape
-   (`changes`, `block`, `message_end`, `tool_execution_*`).
-2. If the lifecycle changes, update `mapper.protocol.test.ts` so the whole
-   sequence passes `verifyEvents`.
-3. Make sure `run_end` closes every open reasoning, text, and tool entity;
-   otherwise `RUN_FINISHED` is rejected.
+1. AG-UI events come from `@ag-ui/claude-agent-sdk`; `TravelAgent` forwards them
+   and only rewrites a failed result into `RUN_ERROR` plus a fault record. Keep
+   that rewrite if you touch the stream handling.
+2. Session resume and in-flight bookkeeping are pinned by
+   `apps/server/src/agent/travel-agent.test.ts`.
+3. Adapter options (gateway env, thinking budget, tool allow-list, the clone
+   fix) are pinned by `apps/server/src/agent/claude-adapter.test.ts`;
+   `apps/server/src/runtime.test.ts` covers the real runtime plus
+   `SqliteAgentRunner` streaming and persisting a run.
+4. `apps/server/src/recovery.test.ts` pins `RESUME_NOTE`, the text
+   `scripts/crash-resume.sh` greps for. Change both together.
 
 ## Commit style
 

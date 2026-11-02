@@ -68,9 +68,10 @@ builds one Claude Agent SDK run per message and keeps the trip state in
 `travel.sqlite`. Plan cards and research counters are read from
 `GET /api/trips/:id`, which the UI polls every two seconds while a run is active.
 
-A longer, visual walkthrough of the request lifecycle and the three failure
-modes fixed in this codebase is in
+A longer, visual walkthrough of the request lifecycle is in
 [`docs/reports/2026-10-20-chat-trace-explainer.html`](docs/reports/2026-10-20-chat-trace-explainer.html).
+It documents the pre-2026-11-02 pi-durable architecture and is kept as a
+historical record; its diagrams are not the current design.
 The original design record (Chinese) is in
 [`docs/design/2026-10-19-taishan-travel-agent-design.md`](docs/design/2026-10-19-taishan-travel-agent-design.md).
 
@@ -197,7 +198,7 @@ and sets `withinBudget`.
 | `apps/server/src/store/` | `better-sqlite3` trip store: docs, sessions, in-flight runs. |
 | `apps/server/src/recovery.ts` | Clears stale runner state and re-sends interrupted runs at startup. |
 | `apps/server/src/runtime.ts` | CopilotKit runtime with `SqliteAgentRunner`. |
-| `packages/shared/` | Trip, plan, source, and transcript types. |
+| `packages/shared/` | Trip, brief, plan, and source types. |
 | `scripts/` | Live and crash-resume acceptance scripts. |
 | `docs/design/` | Original design record. |
 | `docs/reports/` | Developer explainer (HTML). |
