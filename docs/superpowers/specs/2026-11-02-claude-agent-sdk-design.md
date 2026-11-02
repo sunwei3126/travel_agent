@@ -45,8 +45,9 @@
 
 - Node.js 22.22，开发环境 Windows x64，必须在此环境可安装、可运行。
 - `@ag-ui/claude-agent-sdk` 当前为 0.0.8，它把 `@anthropic-ai/claude-agent-sdk` 精确钉在 `0.3.296`（peer 依赖，2026-11-02 通过 `npm view` 核实；SDK 最新为 0.3.316）。本方案跟随这个精确版本。
-- `@ag-ui/core`、`@ag-ui/client` 沿用 `^1.0.3`（适配器要求 `>=1.0.0`）。
-- `@copilotkit/sqlite-runner` 依赖 `better-sqlite3`（peer，必需，且 `dbPath` 必须是真实文件）。
+- 服务端的 `@copilotkit/runtime` 与 `@copilotkit/sqlite-runner` 都精确钉在 `1.79.1`（与前端当前的 `@copilotkit/* 1.79.1` 一致；`sqlite-runner` 的版本号与运行时一一对应，`1.79.1` 存在，已用 `npm view` 核实）。该版本的 `AgentRunnerRunRequest` 没有 `ownerId`，`run_state(thread_id, is_running, current_run_id, updated_at)` 表和 `is_running` 检查已在 1.79.1 源码中核实。
+- 服务端的 `@ag-ui/client`、`@ag-ui/core` 精确钉在 `1.0.2`（运行时和 `sqlite-runner` 都依赖 1.0.2，文档要求同一份拷贝；适配器要求 `>=1.0.0`）。
+- `@copilotkit/sqlite-runner` 依赖 `better-sqlite3`（peer `^12.2.0`，必需，且 `dbPath` 必须是真实文件）。
 - 本地单用户 demo，API 绑定 `127.0.0.1`，不暴露到不受信网络。
 - 研究上限保持每个行程 40 次搜索 / 30 次抓取。
 
@@ -85,8 +86,8 @@ flowchart LR
 
 | 单元 | 作用 | 依赖 |
 | --- | --- | --- |
-| `http/routes/copilotkit.ts` | 把 `/api/copilotkit/*` 的 Node 请求转成 fetch `Request`，交给 `createCopilotRuntimeHandler`，把返回的 `Response`（含 SSE）写回；SSE 用 `reply.hijack()` | `@copilotkit/runtime/v2` |
-| `TravelAgent extends AbstractAgent` | 用 `input.threadId` 作为 `tripId`；每个 run 新建 `ClaudeAgentAdapter`，配置：`systemPrompt`（规划指令 + 当前行程上下文）、`mcpServers: { travel }`（绑定该 `tripId`）、`tools: []`、`allowedTools: mcp__travel__*`、`permissionMode: "dontAsk"`、`env`、`forwardedProps.resume`。把适配器事件流与工具推出的 `travel.tool_progress` 自定义事件合并；见到 `system:init` 即写 `sessionId`；把 `RUN_FINISHED.result.isError === true` 改写为 `RUN_ERROR`。必须 override `clone()` 保留自有字段（CopilotKit 每个请求克隆 agent） | `@ag-ui/claude-agent-sdk`、`store/` |
+| `http/routes/copilotkit.ts` | 用 `createCopilotRuntimeHandler` 建 fetch handler，再用 `createCopilotNodeHandler`（`@copilotkit/runtime/v2/node`）得到 `(req, res) => Promise<void>`，在 Fastify 路由里 `reply.hijack()` 后直接交给它；该路由作用域内关闭 Fastify 的请求体解析，让运行时自己读流 | `@copilotkit/runtime/v2` |
+| `TravelAgent extends AbstractAgent` | 用 `input.threadId` 作为 `tripId`；每个 run 新建 `ClaudeAgentAdapter`，配置：`systemPrompt`（规划指令 + 当前行程上下文）、`mcpServers: { travel }`（绑定该 `tripId`）、`tools: []`、`allowedTools: mcp__travel__*`、`permissionMode: "dontAsk"`、`env`、`forwardedProps.resume`。见到 `system:init` 即写 `sessionId`；把 `RUN_FINISHED.result.isError === true` 改写为 `RUN_ERROR`。必须 override `clone()` 保留自有字段（CopilotKit 每个请求克隆 agent），override `abortRun()` 转调适配器的 `interrupt()` | `@ag-ui/claude-agent-sdk`、`store/` |
 | `store/` | `better-sqlite3`，`DATA_DIR/travel.sqlite`。表：行程索引、brief / plan / sources / research / search_cache / faults、`sessions(tripId → sessionId)`、`inflight` | `better-sqlite3` |
 | `agent/tools/*` | 6 个工具：`tool()` + zod；写库用事务；幂等靠缓存与 `emit_day` 按 `dayIndex` 覆盖；校验失败返回 `isError: true` 的内容，让模型自行修正 | Claude Agent SDK、`store/` |
 | `recovery.ts` | 启动时驱动崩溃恢复（见 7.4） | `store/`、runner |
@@ -94,7 +95,7 @@ flowchart LR
 
 **删除：** `agui/mapper.ts` 及其测试、`harness/`（pi harness、事件监视）、`trips/docs.ts`（pi 文档定义）、`/agui` 路由、`apps/web` 里自己的 CopilotKit route。`model/magpie.ts` 去掉 pi-ai 的模型注册，只保留 `MAGPIE_*` 到 `ANTHROPIC_*` 的环境变量映射。`harness/transcript.ts` 是否保留，取决于探针第 5 项（前端 `connect` 回放能否取代 REST transcript）。
 
-**保留：** `plan/`、`research/`、`svg/`、`deepseek/` 的纯逻辑；`packages/shared` 类型；`/api/trips` REST 契约。
+**保留：** `plan/`、`research/`、`svg/`、`deepseek/` 的纯逻辑；`packages/shared` 类型；REST 的 `GET /health`、`GET /api/trips`、`POST /api/trips`、`GET /api/trips/:id`。**移除：** `POST /api/trips/:id/messages` 和 `GET /api/trips/:id/transcript`。它们的消费者只有前端 `getTranscript` 与两个验收脚本，前者由 `connect` 回放取代，后者改走运行时端点。
 
 ### 7.3 正常一轮的数据流
 
@@ -102,7 +103,7 @@ flowchart LR
 2. runner 检查线程未在运行，标记 `is_running=1`，开始记录事件。
 3. `TravelAgent.run` 在 `inflight` 写一行（`tripId, runId, 用户消息 id 与原文, attempts=0`），读 `sessionId` 与行程状态，新建适配器，`resume: sessionId`。
 4. 适配器调 `query()`，把 SDK 流翻译成 AG-UI 事件；runner 转发给浏览器并在内存累积。
-5. 工具在进程内 MCP 中执行，事务写领域表，同时向 Subject 推 `travel.tool_progress`，与适配器流合并。
+5. 工具在进程内 MCP 中执行，事务写领域表。（现有 6 个工具都不产生进度事件，旧 mapper 转发的 `travel.tool_progress` 只是 pi 的通用机制，所以本方案不做进度事件合并。）
 6. 见到 `system:init` 立刻写 `sessionId`，保证 run 中途崩溃也能续会话。
 7. `RUN_FINISHED` 或 `RUN_ERROR`：删除 `inflight` 行；错误记为 fault；runner 把整轮事件落盘，`is_running=0`。
 
@@ -163,7 +164,7 @@ runner 的两个事实（读 `@copilotkit/sqlite-runner` 源码得到）：
 
 ### 8.2 自动化测试
 
-- 单元（vitest）：工具（内存库）、`store`、`recovery`（清残留、重建消息、`attempts` 上限、runner 表结构缺失即失败的守护测试）、`TravelAgent` 的事件改写与合并（注入假适配器工厂，不依赖模型）。
+- 单元（vitest）：工具（内存库）、`store`、`recovery`（清残留、重建消息、`attempts` 上限、runner 表结构缺失即失败的守护测试）、`TravelAgent` 的事件改写（注入假适配器工厂，不依赖模型）。
 - 无凭据集成：对一个本地假的 Anthropic 兼容服务（脚本化 SSE）跑真实 SDK 子进程，覆盖 MCP 工具执行与 `resume`。`@copilotkit/aimock` 是候选工具，在计划阶段评估，这里不承诺。
 - 删除：mapper、pi harness、旧 transcript 的测试。
 - 前端：现有 52 个测试保持通过，只改受 `runtimeUrl` 与历史恢复方式影响的部分。
@@ -196,7 +197,7 @@ runner 的两个事实（读 `@copilotkit/sqlite-runner` 源码得到）：
 
 - `PI_THINKING_LEVEL` 各档对应的 `maxThinkingTokens` 数值。
 - `inflight.attempts` 上限是否就取 2。
-- Fastify↔fetch 胶水的具体写法与 SSE 背压处理。
-- 前端 REST transcript 与 `setMessages` 是否可删（取决于探针第 5 项）。
+- Fastify 在 `/api/copilotkit/*` 作用域内关闭请求体解析的具体写法。
+- 前端历史恢复走"provider 自动 connect"还是"在 `ChatPanel` 里显式 `connectAgent`"（取决于探针第 5 项）。
 - 无凭据集成测试用 `@copilotkit/aimock` 还是自写脚本化服务。
 - 草图生成的提示词是否需要因换模型调用方式而调整。
