@@ -58,6 +58,15 @@ describe("clearStaleRunState", () => {
   });
 });
 
+describe("RESUME_NOTE", () => {
+  it("pins the literal text the crash acceptance script greps for", () => {
+    // The recovery test below asserts the note via this same constant, so a retyped
+    // note (comma, period, spacing) would keep every test green while breaking the
+    // `服务已重启` grep in the crash acceptance script. Pin the exact string here.
+    expect(RESUME_NOTE).toBe("服务已重启，请继续未完成的任务。");
+  });
+});
+
 describe("recoverInterruptedRuns", () => {
   const agent = { clone: () => ({ cloned: true }) } as unknown as AbstractAgent;
   let counter = 0;
