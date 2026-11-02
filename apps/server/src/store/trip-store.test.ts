@@ -101,6 +101,17 @@ describe("TripStore sessions", () => {
     expect(store.getSessionId("a")).toBe("s2");
     expect(store.getSessionId("b")).toBeUndefined();
   });
+
+  it("clears a trip's session id without touching other trips", () => {
+    const store = TripStore.open(":memory:");
+    store.setSessionId("a", "s1");
+    store.setSessionId("b", "s2");
+    store.clearSessionId("a");
+    expect(store.getSessionId("a")).toBeUndefined();
+    expect(store.getSessionId("b")).toBe("s2");
+    store.clearSessionId("missing");
+    expect(store.getSessionId("b")).toBe("s2");
+  });
 });
 
 describe("TripStore inflight runs", () => {

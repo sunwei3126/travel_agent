@@ -173,6 +173,10 @@ export class TripStore {
       .run(tripId, sessionId);
   }
 
+  clearSessionId(tripId: string): void {
+    this.db.prepare("DELETE FROM sessions WHERE trip_id = ?").run(tripId);
+  }
+
   beginRun(run: NewInflightRun): void {
     this.db
       .prepare(

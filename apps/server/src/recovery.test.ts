@@ -181,4 +181,22 @@ describe("recoverInterruptedRuns", () => {
 
     expect(started).toEqual(["a", "b"]);
   });
+
+  it("times out a stuck run and moves on to the next trip", async () => {
+    const store = storeWithRun("a");
+    store.beginRun({ tripId: "b", runId: "old-b", userMessageId: "m1", userText: "请求 b", startedAt: "2026-10-19T00:00:01.000Z" });
+    const started: string[] = [];
+    const run = vi.fn((request: { threadId: string }) => {
+      started.push(request.threadId);
+      // The first trip's recovered run never settles.
+      return request.threadId === "a" ? new Observable<BaseEvent>(() => {}) : EMPTY;
+    });
+    const log = vi.fn();
+
+    await recoverInterruptedRuns({ ...options(store, run), timeoutMs: 10, log });
+
+    expect(started).toEqual(["a", "b"]);
+    expect(store.getInflight("a")).toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("timed out"));
+  });
 });

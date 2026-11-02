@@ -18,6 +18,8 @@ export type TravelAgentDeps = {
 
 export const FAULT_KIND = "claude.run";
 const ERROR_RESULT_MESSAGE = "The model run ended with an error result";
+/** The SDK's wording when a stored `resume` id no longer has a transcript. */
+const SESSION_UNAVAILABLE = /original sdk session is unavailable/i;
 
 type EventRecord = BaseEvent & Record<string, unknown>;
 
@@ -146,7 +148,13 @@ export class TravelAgent extends AbstractAgent {
               return;
             }
             if (record.type === EventType.RUN_ERROR) {
-              fail(typeof record.message === "string" ? record.message : "Run failed");
+              const message = typeof record.message === "string" ? record.message : "Run failed";
+              if (SESSION_UNAVAILABLE.test(message)) {
+                // A stale resume id would fail every later turn; drop it so the
+                // next message starts a fresh SDK session instead.
+                store.clearSessionId(tripId);
+              }
+              fail(message);
               finish();
             } else if (record.type === EventType.RUN_FINISHED) {
               finish();

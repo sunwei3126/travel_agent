@@ -124,6 +124,37 @@ describe("TravelAgent", () => {
     expect(store.getInflight("t1")).toBeUndefined();
   });
 
+  it("clears the stored session id when the SDK reports it unavailable", async () => {
+    const runError = {
+      type: EventType.RUN_ERROR,
+      message:
+        "original SDK session is unavailable. Restore its transcript/store and original working directory.",
+    } as unknown as BaseEvent;
+    const { agent, store, seen } = setup(scripted([runError]));
+    store.setSessionId("t1", "stale");
+
+    await collect(agent);
+
+    expect(store.getSessionId("t1")).toBeUndefined();
+    expect(store.getDoc("t1", "faults")[0]).toMatchObject({
+      kind: "claude.run",
+      message: expect.stringContaining("session is unavailable"),
+    });
+
+    await collect(agent, input({ runId: "r2" }));
+    expect(seen.input?.forwardedProps).not.toHaveProperty("resume");
+  });
+
+  it("keeps the stored session id for other run errors", async () => {
+    const runError = { type: EventType.RUN_ERROR, message: "gateway down" } as unknown as BaseEvent;
+    const { agent, store } = setup(scripted([runError]));
+    store.setSessionId("t1", "s1");
+
+    await collect(agent);
+
+    expect(store.getSessionId("t1")).toBe("s1");
+  });
+
   it("records a fault and errors when the adapter stream fails", async () => {
     const { agent, store } = setup(scripted([init], { error: new Error("spawn failed") }));
     await expect(collect(agent)).rejects.toThrow("spawn failed");

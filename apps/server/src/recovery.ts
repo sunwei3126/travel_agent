@@ -2,10 +2,12 @@ import { existsSync } from "node:fs";
 import type { AbstractAgent, BaseEvent, RunAgentInput } from "@ag-ui/client";
 import type { AgentRunnerRunRequest } from "@copilotkit/runtime/v2";
 import Database from "better-sqlite3";
-import { lastValueFrom, type Observable } from "rxjs";
+import { lastValueFrom, timeout, TimeoutError, type Observable } from "rxjs";
 import type { TripStore } from "./store/trip-store";
 
 export const RESUME_NOTE = "服务已重启，请继续未完成的任务。";
+/** A recovered run that never settles must not block the trips behind it. */
+const DEFAULT_RECOVERY_TIMEOUT_MS = 15 * 60 * 1000;
 
 const REQUIRED_COLUMNS = ["thread_id", "is_running", "current_run_id"] as const;
 
@@ -48,6 +50,8 @@ export type RecoverOptions = {
   runner: RecoveryRunner;
   agent: AbstractAgent;
   maxAttempts?: number;
+  /** Per-trip bound on one recovered run; defaults to 15 minutes. */
+  timeoutMs?: number;
   now: () => Date;
   newId: () => string;
   log?: (message: string) => void;
@@ -61,6 +65,7 @@ export type RecoverOptions = {
 export async function recoverInterruptedRuns(options: RecoverOptions): Promise<void> {
   const { store, runner, agent, now, newId, log } = options;
   const maxAttempts = options.maxAttempts ?? 2;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RECOVERY_TIMEOUT_MS;
 
   for (const pending of store.listInflight()) {
     // A run that finished, or was replaced by a new user message, is not ours to redo.
@@ -92,15 +97,23 @@ export async function recoverInterruptedRuns(options: RecoverOptions): Promise<v
     };
 
     try {
-      await lastValueFrom(runner.run({ threadId: current.tripId, agent: agent.clone(), input }), {
-        defaultValue: undefined,
-      });
-    } catch (error) {
-      log?.(
-        `Recovery run for ${current.tripId} failed: ${error instanceof Error ? error.message : String(error)}`,
+      await lastValueFrom(
+        runner
+          .run({ threadId: current.tripId, agent: agent.clone(), input })
+          .pipe(timeout({ first: timeoutMs })),
+        { defaultValue: undefined },
       );
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        log?.(`Recovery run for ${current.tripId} timed out after ${timeoutMs}ms`);
+      } else {
+        log?.(
+          `Recovery run for ${current.tripId} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       // A run that started has already recorded its fault and cleared its row;
-      // one the runner refused leaves the original row behind.
+      // one the runner refused, or one that timed out, may leave the original
+      // row behind. Only the row this pass read is ours to drop.
       if (store.getInflight(current.tripId)?.runId === current.runId) store.endRun(current.tripId);
     }
   }
