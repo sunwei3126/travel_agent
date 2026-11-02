@@ -1,6 +1,5 @@
 "use client";
 
-import { contentToText, type Message } from "@ag-ui/core";
 import { useCopilotChatInternal } from "@copilotkit/react-core";
 import { useDefaultRenderTool } from "@copilotkit/react-core/v2";
 import {
@@ -10,29 +9,11 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { getTranscript, getTrip } from "../../lib/api";
 import {
   buildChatSegments,
   type ToolProgress,
 } from "../../lib/chat";
 import { ChatMessages } from "./ChatMessages";
-
-/** Whether the runtime already holds visible conversation content. */
-function hasRenderableHistory(messages: readonly Message[]): boolean {
-  return messages.some((message) => {
-    if (message.role === "user") {
-      return contentToText(message.content).trim().length > 0;
-    }
-    if (message.role === "reasoning") return message.content.length > 0;
-    if (message.role === "assistant") {
-      return (
-        (message.content?.length ?? 0) > 0 ||
-        (message.toolCalls?.length ?? 0) > 0
-      );
-    }
-    return message.role === "tool";
-  });
-}
 
 export function ChatPanel({ tripId }: { tripId: string }) {
   // CopilotKit's own message views render tool calls too; give them a
@@ -45,7 +26,6 @@ export function ChatPanel({ tripId }: { tripId: string }) {
     stopGeneration,
     isLoading,
     isAvailable,
-    setMessages,
     agent,
   } = useCopilotChatInternal();
 
@@ -54,62 +34,8 @@ export function ChatPanel({ tripId }: { tripId: string }) {
   const [progress, setProgress] = useState<Map<string, ToolProgress>>(
     () => new Map(),
   );
-  const historyLoaded = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottom = useRef(true);
-
-  useEffect(() => {
-    if (!isAvailable || historyLoaded.current) return;
-    // The runtime may already hold visible messages (for example after a run
-    // started before the panel mounted); do not replace that live state.
-    if (hasRenderableHistory(messages)) return;
-    historyLoaded.current = true;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const refresh = async (): Promise<void> => {
-      const history = await getTranscript(tripId);
-      if (!cancelled && history.length > 0) setMessages(history);
-    };
-
-    // A reload during a run only sees committed entries; keep checking the
-    // durable snapshot and refresh the chat once the run finishes.
-    const waitForRunEnd = async (): Promise<void> => {
-      try {
-        const trip = await getTrip(tripId);
-        if (cancelled) return;
-        if (trip.running) {
-          timer = setTimeout(() => void waitForRunEnd(), 2000);
-          return;
-        }
-        await refresh();
-      } catch {
-        timer = setTimeout(() => void waitForRunEnd(), 2000);
-      }
-    };
-
-    void (async () => {
-      try {
-        const [history, trip] = await Promise.all([
-          getTranscript(tripId),
-          getTrip(tripId),
-        ]);
-        if (cancelled) return;
-        if (history.length > 0) setMessages(history);
-        if (trip.running) timer = setTimeout(() => void waitForRunEnd(), 2000);
-      } catch {
-        // The next run's MESSAGES_SNAPSHOT restores the transcript.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-    // `messages` is intentionally read once: later updates are live state, not
-    // a reason to refetch history.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAvailable, setMessages, tripId]);
 
   useEffect(() => {
     if (agent === undefined || agent === null) return;

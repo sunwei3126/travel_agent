@@ -13,11 +13,9 @@
     "typecheck": "npm run typegen && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ag-ui/client": "^1.0.3",
     "@ag-ui/core": "^1.0.3",
     "@copilotkit/react-core": "^1.79.1",
     "@copilotkit/react-ui": "^1.79.1",
-    "@copilotkit/runtime": "^1.79.1",
     "@pi-demo/shared": "*",
     "next": "^16.4.2",
     "react": "^19.3.1",

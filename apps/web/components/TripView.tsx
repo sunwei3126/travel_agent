@@ -38,7 +38,8 @@ function hasNewerPlan(
 }
 
 function faultTitle(fault: TripFault): string {
-  return fault.kind === "pi.generation" ? "生成任务已暂停" : "工具任务已暂停";
+  if (fault.kind === "recovery") return "任务恢复失败";
+  return fault.kind === "claude.run" ? "生成任务已暂停" : "工具任务已暂停";
 }
 
 function TripViewContent({

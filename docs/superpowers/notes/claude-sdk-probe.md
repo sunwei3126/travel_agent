@@ -76,4 +76,30 @@ class PatchedAdapter extends ClaudeAgentAdapter {
 
 ## 前端历史恢复（Task 10 第 1 步填写）
 
-historyRestore: <pending — decided in Task 10>
+historyRestore: auto
+
+`TravelChat` 指向 `/backend/api/copilotkit`（`agent="travel"`、`threadId=tripId`、`useSingleEndpoint={false}`）后，CopilotKit 自己就会重放历史：
+
+- 挂载即 `GET /backend/api/copilotkit/info` → `POST /backend/api/copilotkit/agent/travel/connect`。
+- 刷新后的资源列表（`performance.getEntriesByType("resource")` 过滤 `/api/copilotkit`）：
+  `["http://localhost:3000/backend/api/copilotkit/info", "http://localhost:3000/backend/api/copilotkit/agent/travel/connect"]`
+- 刷新后聊天里直接出现上一轮的用户消息、思考块与助手回复；同一时刻旧的 `GET /backend/api/trips/:id/transcript` 返回 404，`ChatPanel` 的历史 effect 无法贡献任何消息，因此恢复完全来自 `connect`。
+- 因此 Step 3 走分支 A：删掉 `ChatPanel` 里的历史 effect 与 `lib/api.ts` 的 `getTranscript`，不加显式 `connectAgent`。
+
+### Next 重写曾缓冲 SSE（已用 `compress: false` 修复）
+
+浏览器里回复不是逐步出现，而是整轮结束后一次性出现。实测：
+
+- 浏览器 fetch 包裹 `/backend/api/copilotkit/agent/travel/run`：`content-encoding: gzip`，整个响应只有 **1 个 chunk（37952 字节）**，在 `t=10390ms` 一次到达，`end=10429ms`。
+- 同一个请求用 node 走 `http://localhost:3000/backend/...`（默认 `accept-encoding`）：`chunks 4`，全部落在 `t=22409ms`，即响应结束时刻。
+- 同一个请求带 `accept-encoding: identity` 走 Next 重写：`chunks 303`，第一个 chunk 在 `t=128ms`，之后持续到达。
+- 直连后端 `http://127.0.0.1:4000/api/copilotkit/agent/travel/run`：`chunks 382`，第一个 chunk 在 `t=104ms`。
+
+即：后端是流式的，Next 的响应压缩（`compress` 默认开启）把 SSE 攒满才吐。浏览器永远带 gzip，所以走重写就看不到增量。
+
+**修复与复测**：`apps/web/next.config.ts` 设 `compress: false` 后：
+
+- node 走 `http://localhost:3000/backend/api/copilotkit/agent/travel/run`（默认 `accept-encoding`）：`content-encoding: null`，**203 个 chunk**（首包 496 字节，之后每 15s 一个 14 字节 keep-alive，正文 2522 字节起持续到达），不再攒包。
+- 浏览器实测（`trip 8f3693f2`，完整 brief，运行中刷新过页面）：思考块字数按秒增长 `313 → 566 → 774`，随后逐条出现 `工具调用 · mcp__travel__trip_update_brief · 运行中 → 已完成`、`deepseek_search`、`plan_emit_day`，日卡逐天出现——确认增量流式。
+- 运行中刷新：聊天恢复（用户消息 + `助手正在思考…` + `停止` 按钮），运行继续，最终右侧出现 3 张日卡（含「风景 / 美食 / 交通」小节、`预估 ¥600–¥750` 与来源链接），行程信息面板显示「信息已齐全。」。
+- 同一 thread 的第二条消息（后端 `9e05684` 之后）：UI 发「确认，请只回一句话：收到。」→ 回复「收到。」，无 `工具任务已暂停`、无 `Original SDK session is unavailable`。

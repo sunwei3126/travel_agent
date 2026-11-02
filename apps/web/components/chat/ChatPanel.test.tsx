@@ -9,12 +9,7 @@ vi.mock("@copilotkit/react-core", () => ({
 vi.mock("@copilotkit/react-core/v2", () => ({
   useDefaultRenderTool: vi.fn(),
 }));
-vi.mock("../../lib/api", () => ({
-  getTranscript: vi.fn(async () => []),
-  getTrip: vi.fn(async () => ({ running: false })),
-}));
 
-import { getTranscript, getTrip } from "../../lib/api";
 import { ChatPanel } from "./ChatPanel";
 
 const messages: Message[] = [
@@ -44,7 +39,6 @@ type Subscriber = {
 function setup(overrides: Record<string, unknown> = {}) {
   const sendMessage = vi.fn(async () => {});
   const stopGeneration = vi.fn();
-  const setMessages = vi.fn();
   let subscriber: Subscriber | undefined;
   chat.hook.mockReturnValue({
     messages,
@@ -52,7 +46,6 @@ function setup(overrides: Record<string, unknown> = {}) {
     stopGeneration,
     isLoading: false,
     isAvailable: true,
-    setMessages,
     agent: {
       subscribe: (next: Subscriber) => {
         subscriber = next;
@@ -64,7 +57,6 @@ function setup(overrides: Record<string, unknown> = {}) {
   return {
     sendMessage,
     stopGeneration,
-    setMessages,
     emit: (event: { name: string; value: unknown }) => {
       act(() => {
         subscriber?.onCustomEvent?.({ event });
@@ -76,10 +68,6 @@ function setup(overrides: Record<string, unknown> = {}) {
 describe("ChatPanel", () => {
   beforeEach(() => {
     chat.hook.mockReset();
-    vi.mocked(getTranscript).mockReset();
-    vi.mocked(getTranscript).mockResolvedValue([]);
-    vi.mocked(getTrip).mockReset();
-    vi.mocked(getTrip).mockResolvedValue({ running: false } as never);
   });
 
   it("renders messages, reasoning, and tool traces collapsed by default", () => {
@@ -219,52 +207,6 @@ describe("ChatPanel", () => {
     expect(within(tool).getByText(/运行中/)).toBeInTheDocument();
     fireEvent.click(within(tool).getByText(/搜索资料/));
     expect(within(tool).getByText("搜索中")).toBeInTheDocument();
-  });
-
-  it("refreshes history when a run that was in progress ends", async () => {
-    const { setMessages } = setup({ messages: [] });
-    vi.mocked(getTranscript).mockResolvedValueOnce([]);
-    vi.mocked(getTrip)
-      .mockResolvedValueOnce({ running: true } as never)
-      .mockResolvedValueOnce({ running: false } as never);
-    vi.mocked(getTranscript).mockResolvedValueOnce(messages);
-
-    render(<ChatPanel tripId="t1" />);
-
-    await waitFor(() => expect(setMessages).toHaveBeenCalledWith(messages), {
-      timeout: 5000,
-    });
-    expect(getTrip).toHaveBeenCalledTimes(2);
-    expect(getTranscript).toHaveBeenCalledTimes(2);
-  });
-
-  it("loads history past an empty assistant placeholder", async () => {
-    const { setMessages } = setup({
-      messages: [{ id: "a0", role: "assistant", content: "" }],
-    });
-    vi.mocked(getTranscript).mockResolvedValueOnce(messages);
-    render(<ChatPanel tripId="t1" />);
-
-    await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith(messages);
-    });
-  });
-
-  it("keeps a live conversation instead of replacing it with history", () => {
-    setup({ messages: [{ id: "u0", role: "user", content: "在" }] });
-    render(<ChatPanel tripId="t1" />);
-    expect(getTranscript).not.toHaveBeenCalled();
-  });
-
-  it("loads history when the chat starts empty", async () => {
-    const { setMessages } = setup({ messages: [] });
-    vi.mocked(getTranscript).mockResolvedValueOnce(messages);
-    render(<ChatPanel tripId="t1" />);
-
-    await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith(messages);
-    });
-    expect(getTranscript).toHaveBeenCalledWith("t1");
   });
 
   it("shows an empty state", () => {

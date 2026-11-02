@@ -224,6 +224,28 @@ describe("TripView", () => {
     expect(sendMessageMock).toHaveBeenCalledTimes(1);
   });
 
+  it("titles a model-run fault and a recovery fault distinctly", () => {
+    const withFault = (kind: string) =>
+      useTripSnapshotMock.mockReturnValue({
+        snapshot: {
+          ...snapshot,
+          faults: [{ kind, message: "详情", at: "2026-10-19T00:00:00.000Z" }],
+        },
+        error: null,
+        loading: false,
+        retry: retryMock,
+      });
+
+    withFault("claude.run");
+    const { unmount } = render(<TripView tripId="t1" initial={snapshot} />);
+    expect(screen.getByTestId("trip-fault")).toHaveTextContent("生成任务已暂停");
+    unmount();
+
+    withFault("recovery");
+    render(<TripView tripId="t1" initial={snapshot} />);
+    expect(screen.getByTestId("trip-fault")).toHaveTextContent("任务恢复失败");
+  });
+
   it("keeps the durable state when live day cards are older", () => {
     useCoAgentMock.mockReturnValue({
       running: false,
