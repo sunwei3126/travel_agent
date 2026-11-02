@@ -25,13 +25,25 @@ describe("createClaudeAdapterFactory", () => {
     PI_THINKING_LEVEL: "medium",
   });
 
-  function options() {
+  const TRAVEL_TOOLS = [
+    "mcp__travel__trip_update_brief",
+    "mcp__travel__plan_emit_day",
+    "mcp__travel__plan_finalize",
+    "mcp__travel__deepseek_search",
+    "mcp__travel__deepseek_fetch",
+    "mcp__travel__sketch_day",
+  ];
+
+  function buildAdapter() {
     const { store, deps } = makeContext();
-    const adapter = createClaudeAdapterFactory({ config, store, deps })({
+    return createClaudeAdapterFactory({ config, store, deps })({
       tripId: "trip-1",
       systemPrompt: "SYSTEM",
     }) as ClaudeAgentAdapter;
-    return adapter.buildOptions(runInput) as Record<string, any>;
+  }
+
+  function options(input: RunAgentInput = runInput) {
+    return buildAdapter().buildOptions(input) as Record<string, any>;
   }
 
   it("disables built-in tools and grants only the travel tools", () => {
@@ -39,24 +51,36 @@ describe("createClaudeAdapterFactory", () => {
     expect(built.tools).toEqual([]);
     expect(built.permissionMode).toBe("dontAsk");
     expect(built.settingSources).toEqual([]);
-    expect(built.allowedTools).toEqual(
-      expect.arrayContaining([
-        "mcp__travel__trip_update_brief",
-        "mcp__travel__plan_emit_day",
-        "mcp__travel__plan_finalize",
-        "mcp__travel__deepseek_search",
-        "mcp__travel__deepseek_fetch",
-        "mcp__travel__sketch_day",
-      ]),
-    );
+    expect(built.allowedTools).toEqual(TRAVEL_TOOLS);
     expect(Object.keys(built.mcpServers)).toEqual(["travel"]);
+  });
+
+  it("strips frontend tools and shared state so only the travel tools survive", () => {
+    const built = options({
+      ...runInput,
+      state: { plan: { days: [] } },
+      tools: [
+        { name: "render_card", description: "Render a card", parameters: { type: "object", properties: {} } },
+      ],
+    });
+    expect(built.allowedTools).toEqual(TRAVEL_TOOLS);
+    expect(Object.keys(built.mcpServers)).toEqual(["travel"]);
+    expect(built.systemPrompt).toEqual("SYSTEM");
+  });
+
+  it("re-creates the SDK session bookkeeping on a clone so run() can admit a thread", () => {
+    const clone = buildAdapter().clone() as unknown as Record<string, unknown>;
+    expect(clone.bindings).toBeInstanceOf(Map);
+    expect(clone.admitted).toBeInstanceOf(Set);
+    expect(clone.activeQueries).toBeInstanceOf(Map);
+    expect(clone.sessions).toBeInstanceOf(Map);
   });
 
   it("uses the configured model, thinking budget and trip prompt", () => {
     const built = options();
     expect(built.model).toBe("m1");
     expect(built.thinking).toEqual({ type: "enabled", budgetTokens: 8192 });
-    expect(built.systemPrompt).toContain("SYSTEM");
+    expect(built.systemPrompt).toEqual("SYSTEM");
     expect(built.includePartialMessages).toBe(true);
   });
 
