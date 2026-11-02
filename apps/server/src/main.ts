@@ -17,6 +17,12 @@ import { TripService } from "./trips/service";
 
 const config = loadConfig();
 const paths = dataPaths(config);
+
+// The SDK adapter resolves session transcripts from the process environment when
+// it validates `resume`, so the config dir must be visible there too, not only in
+// the per-call env handed to the CLI.
+process.env.CLAUDE_CONFIG_DIR = paths.claudeConfigDir;
+
 for (const dir of [paths.root, paths.workspace, paths.sketchWorkspace]) {
   mkdirSync(dir, { recursive: true });
 }
