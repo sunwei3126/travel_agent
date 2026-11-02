@@ -135,7 +135,7 @@ runner 的两个事实（读 `@copilotkit/sqlite-runner` 源码得到）：
 | `MAGPIE_BASE_URL` / `MAGPIE_API_KEY` | `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY`（意图是保持 `x-api-key` 语义，探针第 1 项验证） |
 | `MAGPIE_MODEL` | `model`；Claude Code 的各模型别名变量也指向它，避免网关收到不认识的小模型名 |
 | `MAGPIE_MAX_TOKENS` | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` |
-| `PI_THINKING_LEVEL`（`off/low/medium/high`） | `maxThinkingTokens`（它在适配器的 `forwardedProps` 白名单里；名字保留，档位数值在计划里定） |
+| `PI_THINKING_LEVEL`（`off/low/medium/high`） | SDK 的 `thinking` 选项：`off` → `{ type: "disabled" }`，其余 → `{ type: "enabled", budgetTokens }`。`maxThinkingTokens` 已被 SDK 标为弃用，不用。名字保留，档位数值在计划里定 |
 | `DATA_DIR` | 其下放 `travel.sqlite`、`threads.db`、`claude/` |
 | `AGENT_URL` | 不再使用；前端 `runtimeUrl` 指向后端 |
 | `DEEPSEEK_*`、`PORT`、`API_URL`、`NEXT_PUBLIC_API_URL`、`MAGPIE_LIVE` | 不变 |
@@ -195,7 +195,7 @@ runner 的两个事实（读 `@copilotkit/sqlite-runner` 源码得到）：
 
 ## 10. 留给实现者的决定
 
-- `PI_THINKING_LEVEL` 各档对应的 `maxThinkingTokens` 数值。
+- `PI_THINKING_LEVEL` 各档对应的 `budgetTokens` 数值（计划里先给出初值，探针第 2 项后可调）。
 - `inflight.attempts` 上限是否就取 2。
 - Fastify 在 `/api/copilotkit/*` 作用域内关闭请求体解析的具体写法。
 - 前端历史恢复走"provider 自动 connect"还是"在 `ChatPanel` 里显式 `connectAgent`"（取决于探针第 5 项）。
