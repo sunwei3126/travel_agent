@@ -27,9 +27,10 @@ plans survive refreshes and server restarts.
 - **Visible traces.** Reasoning blocks and tool calls are collapsed by default
   in chat; expand one to see arguments, status, results, errors, and live tool
   progress.
-- **Durable by construction.** Each trip is a pi-durable conversation backed by
-  SQLite. A restarted server resumes an in-flight run; a refreshed browser
-  restores the transcript.
+- **Durable by construction.** Thread history lives in a CopilotKit runner
+  (SQLite), trip state in the server's own SQLite, and the model session in
+  Claude Agent SDK transcripts, all under `DATA_DIR`. A restarted server
+  re-sends the run that was in flight; a refreshed browser replays the thread.
 - **Budget-aware.** `plan_finalize` sums day-card ranges against the brief cap;
   over-budget plans are flagged and revised.
 
@@ -41,28 +42,31 @@ flowchart LR
     UI["ChatPanel · plan board"]
   end
   subgraph Next["Next.js :3000"]
-    RT["CopilotKit runtime<br/>/api/copilotkit/[[...slug]]"]
+    PX["/backend rewrite"]
   end
   subgraph Server["Fastify :4000"]
-    AGUI["/agui SSE<br/>AG-UI mapper"]
-    SVC["TravelService"]
+    RT["CopilotKit runtime<br/>/api/copilotkit"]
+    RUN["SqliteAgentRunner<br/>threads.db"]
+    AG["TravelAgent<br/>Claude Agent SDK adapter"]
+    TOOLS["6 travel tools (in-process MCP)"]
+    DB[("travel.sqlite")]
+    REST["/api/trips REST"]
   end
-  D[("pi-durable<br/>SQLite + docs")]
+  CC["Claude Code subprocess"]
   M["Model endpoint<br/>Anthropic Messages"]
   S["DeepSeek<br/>Search / Fetch"]
 
-  UI -->|"agent/run"| RT
-  RT -->|"POST /agui?tripId"| AGUI
-  AGUI --> SVC
-  SVC --> D
-  SVC --> M
-  SVC --> S
-  UI -->|"GET /backend/api/trips/:id[/transcript]"| SVC
+  UI --> PX --> RT --> RUN --> AG
+  AG --> CC --> M
+  CC --> TOOLS --> DB
+  TOOLS --> S
+  PX --> REST --> DB
 ```
 
-The durable transcript is the record; CopilotKit messages, plan cards, and
-research counters are views rebuilt from it. The UI polls the durable snapshot
-every two seconds while a run is active and prefers the newer day card.
+The CopilotKit runtime owns thread history and reconnects; `TravelAgent`
+builds one Claude Agent SDK run per message and keeps the trip state in
+`travel.sqlite`. Plan cards and research counters are read from
+`GET /api/trips/:id`, which the UI polls every two seconds while a run is active.
 
 A longer, visual walkthrough of the request lifecycle and the three failure
 modes fixed in this codebase is in
@@ -76,8 +80,10 @@ The original design record (Chinese) is in
 - **An Anthropic Messages-compatible model endpoint.** The development default
   is a local magpie gateway at `http://127.0.0.1:3425`; any compatible endpoint
   works through `MAGPIE_*`.
+- **A platform with a prebuilt `better-sqlite3` binary** (Node 22.22 on
+  Windows, macOS and Linux x64/arm64).
 - **A DeepSeek API key** for the research tools. Unit tests do not need one:
-  server tests use a deterministic faux provider.
+  they run against in-memory stores and scripted fakes.
 
 ## Quick start
 
@@ -110,7 +116,7 @@ export DEEPSEEK_API_KEY=...
 npm run start:server
 
 # second terminal
-API_URL=http://127.0.0.1:4000 AGENT_URL=http://127.0.0.1:4000/agui npm run start:web
+API_URL=http://127.0.0.1:4000 npm run start:web
 ```
 
 ## Configuration
@@ -120,15 +126,14 @@ API_URL=http://127.0.0.1:4000 AGENT_URL=http://127.0.0.1:4000/agui npm run start
 | `DEEPSEEK_API_KEY` | server | — | **Required at startup.** Used by Search/Fetch. |
 | `DEEPSEEK_BASE_URL` | server | `https://api.deepseek.com` | Research API base. |
 | `PORT` | server | `4000` | Crash script defaults to `4100`. |
-| `DATA_DIR` | server | `./data` | Relative to the server process cwd (`apps/server` via the workspace script). SQLite is single-process. |
-| `MAGPIE_BASE_URL` | server | `http://127.0.0.1:3425` | Any Anthropic Messages-compatible endpoint. |
-| `MAGPIE_MODEL` | server | `deepseek/deepseek-flash` | Must match the endpoint’s model id. |
-| `MAGPIE_API_KEY` | server | `magpie` | Sent as `x-api-key`; a local magpie accepts any value. |
-| `MAGPIE_MAX_TOKENS` | server | `393216` | Lower it for providers with smaller output limits. |
-| `PI_THINKING_LEVEL` | server | `low` | `off`, `low`, `medium`, or `high`. |
+| `DATA_DIR` | server | `./data` | Holds `travel.sqlite`, `threads.db` and `claude/` (Claude session transcripts). Relative to the server process cwd. SQLite is single-process. |
+| `MAGPIE_BASE_URL` | server | `http://127.0.0.1:3425` | Any Anthropic Messages-compatible endpoint. Mapped onto the `ANTHROPIC_*` variables Claude Code reads. |
+| `MAGPIE_MODEL` | server | `deepseek/deepseek-flash` | Must match the endpoint’s model id. Mapped onto the `ANTHROPIC_*` variables Claude Code reads. |
+| `MAGPIE_API_KEY` | server | `magpie` | Sent as `x-api-key`; a local magpie accepts any value. Mapped onto the `ANTHROPIC_*` variables Claude Code reads. |
+| `MAGPIE_MAX_TOKENS` | server | `393216` | Lower it for providers with smaller output limits. Mapped onto the `ANTHROPIC_*` variables Claude Code reads. |
+| `PI_THINKING_LEVEL` | server | `low` | `off`, `low`, `medium`, or `high`; mapped to the SDK thinking budget (`off` disables it). |
 | `API_URL` | Next config, scripts | `http://127.0.0.1:4000` | Target of the `/backend` rewrite; acceptance API base. |
 | `NEXT_PUBLIC_API_URL` | browser code | `/backend` | Inlined at build time; an absolute value may need CORS. |
-| `AGENT_URL` | Next CopilotKit route | `http://127.0.0.1:4000/agui` | Must be reachable from the Next server. |
 | `MAGPIE_LIVE` | tests | unset | Set `1` to run the live provider test. |
 
 ## Scripts
@@ -140,7 +145,6 @@ API_URL=http://127.0.0.1:4000 AGENT_URL=http://127.0.0.1:4000/agui npm run start
 | `npm run build` | Production Next.js build. |
 | `npm run typecheck` | Server + shared + web (`next typegen` runs first). |
 | `npm test` | Server, web, and shared tests. |
-| `npm run probe:thinking` | Ask the model endpoint whether it returns thinking blocks (exit `0` yes, `2` no). |
 | `npm run acceptance:live` | End-to-end scenario against a running server. |
 | `npm run acceptance:crash` | Start a server, `SIGKILL` it mid-research, restart, verify resume. |
 
@@ -158,7 +162,6 @@ npm run build
 Live checks (require a model endpoint and `DEEPSEEK_API_KEY`):
 
 ```bash
-npm run probe:thinking
 npm run acceptance:live
 ```
 
@@ -174,8 +177,9 @@ for up to 15 minutes. It fails unless the run ends with:
 
 Research is capped at **40 searches / 30 fetches per trip**; repeated completed
 calls are cached. `acceptance:crash` starts its own server on port `4100`,
-kills it after research begins, restarts against the same durable store, and
-verifies the run resumes without repeating completed work.
+kills it after research begins, restarts against the same `DATA_DIR`, and
+verifies the run resumes without repeating completed work and that the chat
+history still contains the original request plus the restart note.
 
 Validation split: `plan_emit_day` checks brief completeness, source existence,
 fetched status, and cost ranges. `plan_finalize` only sums the day-card ranges
@@ -186,13 +190,13 @@ and sets `withinBudget`.
 | Path | Responsibility |
 | --- | --- |
 | `apps/web/` | Next.js UI: chat traces, trip list, plan board, budget. |
-| `apps/web/app/api/copilotkit/` | Per-trip CopilotKit runtime bridging AG-UI. |
 | `apps/web/components/chat/` | ChatPanel, ReasoningBlock, ToolCallBlock. |
 | `apps/web/lib/chat.ts` | Pure grouping/status/format helpers. |
-| `apps/server/` | Fastify API, AG-UI mapper, TravelService. |
-| `apps/server/src/agent/` | System prompt, six tools, extension registration. |
-| `apps/server/src/harness/` | Durable conversations, transcript shaping, event watching. |
-| `apps/server/src/agui/mapper.ts` | Pi events → AG-UI reasoning/text/tool lifecycle. |
+| `apps/server/` | Fastify API and the CopilotKit runtime host. |
+| `apps/server/src/agent/` | `TravelAgent`, the Claude adapter factory, the six tools, system prompt. |
+| `apps/server/src/store/` | `better-sqlite3` trip store: docs, sessions, in-flight runs. |
+| `apps/server/src/recovery.ts` | Clears stale runner state and re-sends interrupted runs at startup. |
+| `apps/server/src/runtime.ts` | CopilotKit runtime with `SqliteAgentRunner`. |
 | `packages/shared/` | Trip, plan, source, and transcript types. |
 | `scripts/` | Live and crash-resume acceptance scripts. |
 | `docs/design/` | Original design record. |
@@ -204,6 +208,9 @@ and sets `withinBudget`.
 - No authentication or multi-tenant isolation; the API binds `127.0.0.1` by
   default. Do not expose it to an untrusted network.
 - SQLite is a single-process store; `DATA_DIR` is not encrypted.
+- The run that was in flight when the server died loses its partial output from
+  the chat history (completed tool results are kept); a short restart note is
+  added to the chat.
 - The UI is Chinese; the agent responds in the user’s language.
 - Live model output varies, and research sources can be stale or unavailable.
 - Provider usage may incur costs. Keep keys in the environment; never commit

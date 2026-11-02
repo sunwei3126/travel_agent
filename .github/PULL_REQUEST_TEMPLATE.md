@@ -13,7 +13,7 @@ Fixes #
 - [ ] `npm test`
 - [ ] `npm run typecheck`
 - [ ] `npm run build`
-- [ ] Live check (if relevant): `npm run probe:thinking` / `npm run acceptance:live`
+- [ ] Live checks (if relevant): `npm run acceptance:live` / `npm run acceptance:crash`
 - [ ] Added or updated tests for behavior changes
 
 ## Environment or schema impact

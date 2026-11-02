@@ -103,3 +103,29 @@ historyRestore: auto
 - 浏览器实测（`trip 8f3693f2`，完整 brief，运行中刷新过页面）：思考块字数按秒增长 `313 → 566 → 774`，随后逐条出现 `工具调用 · mcp__travel__trip_update_brief · 运行中 → 已完成`、`deepseek_search`、`plan_emit_day`，日卡逐天出现——确认增量流式。
 - 运行中刷新：聊天恢复（用户消息 + `助手正在思考…` + `停止` 按钮），运行继续，最终右侧出现 3 张日卡（含「风景 / 美食 / 交通」小节、`预估 ¥600–¥750` 与来源链接），行程信息面板显示「信息已齐全。」。
 - 同一 thread 的第二条消息（后端 `9e05684` 之后）：UI 发「确认，请只回一句话：收到。」→ 回复「收到。」，无 `工具任务已暂停`、无 `Original SDK session is unavailable`。
+
+## 验收记录（Task 11）
+
+### 已执行：无凭据冒烟（2026-11-03）
+
+本机没有 `DEEPSEEK_API_KEY`，`acceptance:live` 与 `acceptance:crash` **未执行**（见下节）。改用一条只要求澄清、不会触发任何 DeepSeek 工具调用的 brief 做无凭据端到端冒烟：
+
+```
+DATA_DIR=./data/smoke11 PORT=4202 MAGPIE_MODEL=workbuddy-ai/glm-5.3-flash DEEPSEEK_API_KEY=smoke npm run start:server
+```
+
+- 建行程：`POST /api/trips` → `{"tripId":"2b447a29-081d-456a-ad20-a8d1ffd0b66a",…,"days":3}`；`GET /health` → `{"ok":true}`。
+- 第 1 轮 `POST /api/copilotkit/agent/travel/run`（`threadId`=tripId，body 含 `state/tools/context/forwardedProps/messages`），用户消息「泰山玩三天」：SSE 里 `RUN_STARTED` ×1、`TEXT_MESSAGE_START/CONTENT/END` 各 ×1（`TEXT_MESSAGE_CONTENT` 191 条）、`RUN_FINISHED` ×1、`RUN_ERROR` 0 条。回复只提问：先复述「目的地=泰山、出发日期=2026-12-01、行程3天」，再问出发地/预算、同行与体力、兴趣偏好。随后 `GET /api/trips/:id` → `running:false`、`plan.days.length:0`、`research.searchCount:0`（补齐 brief 前没有 `plan_emit_day` 写入，与场景 B 的预期一致）。
+- 第 2 轮同一 `threadId` 再发一条（「预算3000，从上海虹桥出发，一个人，体力一般，在意风景和美食。先别查资料，只说一句你记住的条件。」）：`RUN_STARTED`/`RUN_FINISHED` 各 ×1、`TEXT_MESSAGE_CONTENT` 43 条、无 `RUN_ERROR`；服务端日志出现 `[ClaudeAdapter] Applied forwarded_prop: resume = 9bae0f68-…`，回复「已记住：上海虹桥出发、1人、预算3000元、体力一般、重风景和美食，2026-12-01起泰山3天。」——同线程续跑成功，未出现 `Thread already running`。
+- `connect` 回放：`POST /api/copilotkit/agent/travel/connect` body `{"threadId":"…","runId":"<uuid>","messages":[]}` → SSE 中两轮用户消息各出现（`泰山玩三天` ×2、`预算3000` ×4），`RUN_FINISHED` ×2。
+- 结束后停服务并删除 `apps/server/data/smoke11`。
+
+### 未执行
+
+| 项目 | 原因 |
+| --- | --- |
+| `npm run acceptance:live`（场景 A、G） | 本机没有 `DEEPSEEK_API_KEY`，研究工具无法调用 |
+| `npm run acceptance:crash`（场景 C） | 同上；脚本会跑真实研究并在中途杀进程 |
+| 场景 E（SVG 失败卡片）、F（局部修改）、H（内容核对） | 均依赖一次真实研究 + 出图，缺 key |
+| 场景 B 的界面部分（刷新恢复由 Task 10 的浏览器实测覆盖） | 本轮只做了 API 层验证 |
+

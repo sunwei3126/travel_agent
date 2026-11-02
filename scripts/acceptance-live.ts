@@ -36,6 +36,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Starts a run through the CopilotKit runtime; progress is read from the trip snapshot. */
+async function submitRun(tripId: string, content: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/copilotkit/agent/travel/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({
+      threadId: tripId,
+      runId: randomUUID(),
+      state: {},
+      tools: [],
+      context: [],
+      forwardedProps: {},
+      messages: [{ id: randomUUID(), role: "user", content }],
+    }),
+  });
+  if (!response.ok || response.body === null) {
+    throw new Error(
+      `POST /api/copilotkit/agent/travel/run failed (${response.status}): ${await response
+        .text()
+        .catch(() => "")}`,
+    );
+  }
+  // Drain in the background so the connection stays open while the run works.
+  void response.body.pipeTo(new WritableStream()).catch(() => {});
+}
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -76,10 +102,7 @@ async function main(): Promise<void> {
   });
   const tripId = encodeURIComponent(trip.tripId);
 
-  await request(`/api/trips/${tripId}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ content: BRIEF, requestId: randomUUID() }),
-  });
+  await submitRun(trip.tripId, BRIEF);
 
   const getSnapshot = (): Promise<TripSnapshot> =>
     request<TripSnapshot>(`/api/trips/${tripId}`);

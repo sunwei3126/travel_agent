@@ -27,6 +27,7 @@ DATA_DIR="$DATA_ROOT/acceptance-crash-$$"
 LOG_FILE="$DATA_DIR/server.log"
 SERVER_PID=""
 TRIP_ID=""
+RUN_CURL_PID=""
 
 mkdir -p "$DATA_DIR"
 
@@ -178,6 +179,7 @@ wait_for_completion() {
 }
 
 cleanup() {
+  if [ -n "$RUN_CURL_PID" ]; then kill "$RUN_CURL_PID" 2>/dev/null || true; fi
   stop_server
   rm -rf "$DATA_DIR"
 }
@@ -195,12 +197,16 @@ TRIP_ID=$(printf '%s' "$trip" | json_get tripId)
 [ -n "$TRIP_ID" ] || fail "create trip returned no tripId"
 log "created trip $TRIP_ID"
 
-request_id=$(node -e 'process.stdout.write(crypto.randomUUID())')
-message=$(node -e '
-  process.stdout.write(JSON.stringify({ content: process.argv[1], requestId: process.argv[2] }));
-' "$BRIEF" "$request_id")
-api_post "/api/trips/$TRIP_ID/messages" "$message" >/dev/null ||
-  fail "could not submit the brief"
+run_body=$(node -e '
+  const id = () => crypto.randomUUID();
+  process.stdout.write(JSON.stringify({
+    threadId: process.argv[1], runId: id(), state: {}, tools: [], context: [], forwardedProps: {},
+    messages: [{ id: id(), role: "user", content: process.argv[2] }],
+  }));
+' "$TRIP_ID" "$BRIEF")
+curl -sS -N -X POST -H "content-type: application/json" -H "accept: text/event-stream" \
+  --data "$run_body" "$API_URL/api/copilotkit/agent/travel/run" >/dev/null 2>&1 &
+RUN_CURL_PID=$!
 log "submitted the Tai Shan brief"
 
 if ! research_counts=$(wait_for_research); then
@@ -247,6 +253,20 @@ after_fetch_attempts=$(printf '%s' "$final" | json_get_json research.fetchAttemp
 [ "${final_search:-0}" -le "$MAX_SEARCHES" ] ||
   fail "searchCount $final_search exceeded the cap of $MAX_SEARCHES"
 [ "${final_fetch:-0}" -gt 0 ] || fail "no page was fetched, so no hard fact was verified"
+
+# The runner owns chat history; `connect` replays the thread from its SQLite
+# store. runId and messages are required by the runtime schema.
+connect_body=$(node -e '
+  process.stdout.write(JSON.stringify({
+    threadId: process.argv[1], runId: crypto.randomUUID(), messages: [],
+  }));
+' "$TRIP_ID")
+history=$(curl -sS -N --max-time 20 -X POST -H "content-type: application/json" \
+  --data "$connect_body" "$API_URL/api/copilotkit/agent/travel/connect" 2>/dev/null || true)
+printf '%s' "$history" | grep -qF -- "$BRIEF" ||
+  fail "chat history lost the original request after recovery"
+printf '%s' "$history" | grep -qF -- "服务已重启" ||
+  fail "chat history is missing the restart note"
 
 # Every attempt present before the kill had committed its result. A replay of
 # that call must hit the cache, so its attempt count may not grow.

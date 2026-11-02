@@ -16,6 +16,13 @@ updates:
       - dependency-name: "*"
         update-types:
           - version-update:semver-major
+      # Pinned together: the AG-UI adapter requires this exact SDK version, and
+      # the runtime and runner must share a version.
+      - dependency-name: "@anthropic-ai/claude-agent-sdk"
+      - dependency-name: "@ag-ui/claude-agent-sdk"
+      - dependency-name: "@ag-ui/client"
+      - dependency-name: "@ag-ui/core"
+      - dependency-name: "@copilotkit/*"
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

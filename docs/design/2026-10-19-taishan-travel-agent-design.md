@@ -1,5 +1,9 @@
 # 旅游规划智能体设计（泰山首测）
 
+> **2026-11-02 更新：** §9.2（pi-durable 接入）、§9.6（AG-UI 桥）、§9.9 中与耐久会话相关的部分，已被
+> [`docs/superpowers/specs/2026-11-02-claude-agent-sdk-design.md`](../superpowers/specs/2026-11-02-claude-agent-sdk-design.md)
+> 取代。产品行为（§2、§3、§10 的验收场景）仍以本文为准。
+
 日期：2026-10-19
 状态：已实现（2026-10-20）
 
