@@ -1,7 +1,5 @@
-import { section } from "@earendil-works/pi-durable";
 import type { DayCard, TripBrief, TripPlan, TripSources } from "@pi-demo/shared";
 import { freshnessOf, isVerifiedFact, rankSources } from "../research/freshness";
-import { TripBriefDoc, TripPlanDoc, TripSourcesDoc } from "../trips/docs";
 
 type TripContextState = {
   brief?: Readonly<TripBrief> | undefined;
@@ -92,9 +90,3 @@ export function renderTripContext(
   return lines.join("\n");
 }
 
-export const tripContextSection = section("trip", async (input, context) => {
-  const brief = await input.read.snapshot(TripBriefDoc, input.conversationId, context);
-  const plan = await input.read.snapshot(TripPlanDoc, input.conversationId, context);
-  const sources = await input.read.snapshot(TripSourcesDoc, input.conversationId, context);
-  return renderTripContext({ brief, plan, sources });
-});
