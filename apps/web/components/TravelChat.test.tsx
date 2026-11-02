@@ -1,19 +1,28 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { createAgentConfig } from "../lib/agent-config";
 
 vi.mock("@copilotkit/react-core", () => ({
   CopilotKit: ({
     runtimeUrl,
     agent,
+    threadId,
+    useSingleEndpoint,
     children,
   }: {
     runtimeUrl: string;
     agent: string;
+    threadId: string;
+    useSingleEndpoint: boolean;
     children: ReactNode;
   }) => (
-    <div data-testid="copilotkit" data-runtime-url={runtimeUrl} data-agent={agent}>
+    <div
+      data-testid="copilotkit"
+      data-runtime-url={runtimeUrl}
+      data-agent={agent}
+      data-thread-id={threadId}
+      data-single-endpoint={String(useSingleEndpoint)}
+    >
       {children}
     </div>
   ),
@@ -29,39 +38,22 @@ vi.mock("./chat/ChatPanel", () => ({
 
 import { TravelChat } from "./TravelChat";
 
-describe("createAgentConfig", () => {
-  it("builds a per-trip agent URL", () => {
-    expect(createAgentConfig("abc").url).toBe(
-      "http://127.0.0.1:4000/agui?tripId=abc",
-    );
-  });
-});
-
 describe("TravelChat", () => {
-  it("mounts CopilotKit against the per-trip runtime with Chinese labels", () => {
+  it("mounts CopilotKit against the backend runtime with the trip as the thread", () => {
     render(<TravelChat tripId="abc" />);
 
-    expect(screen.getByTestId("copilotkit")).toHaveAttribute(
-      "data-runtime-url",
-      "/api/copilotkit/abc",
-    );
-    expect(screen.getByTestId("copilotkit")).toHaveAttribute(
-      "data-agent",
-      "travel",
-    );
-    expect(screen.getByTestId("chat-panel")).toHaveAttribute(
-      "data-trip-id",
-      "abc",
-    );
+    const provider = screen.getByTestId("copilotkit");
+    expect(provider).toHaveAttribute("data-runtime-url", "/backend/api/copilotkit");
+    expect(provider).toHaveAttribute("data-agent", "travel");
+    expect(provider).toHaveAttribute("data-thread-id", "abc");
+    expect(provider).toHaveAttribute("data-single-endpoint", "false");
+    expect(screen.getByTestId("chat-panel")).toHaveAttribute("data-trip-id", "abc");
     expect(screen.getByText("旅行助手")).toBeInTheDocument();
   });
 
-  it("encodes the trip id in the runtime URL", () => {
+  it("passes the trip id through unchanged as the thread id", () => {
     render(<TravelChat tripId="a/b c" />);
 
-    expect(screen.getByTestId("copilotkit")).toHaveAttribute(
-      "data-runtime-url",
-      "/api/copilotkit/a%2Fb%20c",
-    );
+    expect(screen.getByTestId("copilotkit")).toHaveAttribute("data-thread-id", "a/b c");
   });
 });
