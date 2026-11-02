@@ -33,15 +33,14 @@
     "typegen": "npm run typegen --workspace @pi-demo/web",
     "typecheck": "npm run typecheck --workspace @pi-demo/server && npm run typecheck --workspace @pi-demo/shared && npm run typecheck --workspace @pi-demo/web",
     "acceptance:live": "tsx scripts/acceptance-live.ts",
-    "acceptance:crash": "bash scripts/crash-resume.sh",
-    "probe:thinking": "tsx scripts/probe-thinking.ts"
+    "acceptance:crash": "bash scripts/crash-resume.sh"
   },
   "keywords": [
     "travel-agent",
     "durable-agents",
     "ag-ui",
     "copilotkit",
-    "pi-durable"
+    "claude-agent-sdk"
   ],
   "devDependencies": {
     "jsdom": "^29.1.1",

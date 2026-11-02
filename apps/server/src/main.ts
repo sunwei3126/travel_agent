@@ -1,61 +1,64 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import type { DayCard } from "@pi-demo/shared";
-import { contentText, type ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
-import { createRegistry } from "@earendil-works/pi-durable";
-import { createTravelExtension } from "./agent/extension";
+import { createClaudeAdapterFactory } from "./agent/claude-adapter";
+import type { TravelDeps } from "./agent/deps";
+import { buildSystemPrompt } from "./agent/system-prompt";
+import { TravelAgent } from "./agent/travel-agent";
+import { dataPaths, loadConfig } from "./config";
 import { DeepSeekClient } from "./deepseek/client";
-import { TravelService } from "./harness/service";
 import { buildServer } from "./http/app";
-import { createMagpieModels, resolveMagpieModel } from "./model/magpie";
+import { clearStaleRunState, recoverInterruptedRuns } from "./recovery";
+import { createTravelRuntime } from "./runtime";
+import { TripStore } from "./store/trip-store";
 import { generateDaySketch } from "./svg/generate";
+import { createSketchGenerator } from "./svg/sketch-model";
+import { TripService } from "./trips/service";
 
-const apiKey = process.env.DEEPSEEK_API_KEY;
-if (apiKey === undefined || apiKey.length === 0) {
-  throw new Error("DEEPSEEK_API_KEY is required");
+const config = loadConfig();
+const paths = dataPaths(config);
+for (const dir of [paths.root, paths.workspace, paths.sketchWorkspace]) {
+  mkdirSync(dir, { recursive: true });
 }
 
-const models = createMagpieModels(process.env);
-const model = resolveMagpieModel(models, process.env);
-const deepseek = new DeepSeekClient({
-  apiKey,
-  baseUrl: process.env.DEEPSEEK_BASE_URL,
-});
+const store = TripStore.open(paths.travelDb);
 
-const generate = async (prompt: string): Promise<string> => {
-  const message = await models.completeSimple(model, {
-    messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
-  });
-  return contentText(message.content);
+// Must happen before the runner opens its database: an unclean shutdown leaves
+// `is_running` set, and the runner refuses to run a flagged thread.
+const cleared = clearStaleRunState(paths.threadsDb);
+if (cleared > 0) console.warn(`Cleared ${cleared} stale run flag(s) left by an unclean shutdown`);
+
+const deepseek = new DeepSeekClient({
+  apiKey: config.deepseekApiKey,
+  baseUrl: config.deepseekBaseUrl,
+});
+const generate = createSketchGenerator(config);
+const deps: TravelDeps = {
+  now: () => new Date(),
+  deepseek,
+  generateSketch: (day: DayCard) => generateDaySketch({ day, generate }),
+  caps: { search: 40, fetch: 30 },
 };
 
-const generateSketch = (day: DayCard) => generateDaySketch({ day, generate });
-
-const registry = createRegistry();
-registry.install(
-  createTravelExtension({
-    now: () => new Date(),
-    deepseek,
-    generateSketch,
-    caps: { search: 40, fetch: 30 },
-  }),
-);
-
-const requestedThinkingLevel =
-  (process.env.PI_THINKING_LEVEL ?? "low") as ModelThinkingLevel;
-const thinkingLevel = clampThinkingLevel(model, requestedThinkingLevel);
-
-const service = await TravelService.open({
-  dataDir: process.env.DATA_DIR ?? "./data",
-  models,
-  registry,
-  defaultModel: model,
-  thinkingLevel,
+const agent = new TravelAgent({
+  store,
+  now: deps.now,
+  createAdapter: createClaudeAdapterFactory({ config, store, deps }),
+  buildSystemPrompt: (tripId) => buildSystemPrompt(store, tripId, deps.now()),
 });
+const { runner, handler } = createTravelRuntime({ agent, threadsDbPath: paths.threadsDb });
 
-const app = buildServer({ service });
-await app.listen({
-  host: "127.0.0.1",
-  port: Number(process.env.PORT ?? 4000),
+const app = buildServer({ service: new TripService(store, deps.now), copilotHandler: handler });
+await app.listen({ host: "127.0.0.1", port: config.port });
+
+// Resume in the background so the server is reachable while runs are re-sent.
+void recoverInterruptedRuns({
+  store,
+  runner,
+  agent,
+  now: deps.now,
+  newId: randomUUID,
+  log: (message) => console.warn(message),
 });
 
 let shuttingDown = false;
@@ -63,7 +66,7 @@ const shutdown = async (): Promise<void> => {
   if (shuttingDown) return;
   shuttingDown = true;
   await app.close();
-  await service.close();
+  store.close();
 };
 
 process.once("SIGINT", () => {

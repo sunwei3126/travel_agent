@@ -1,42 +1,30 @@
-import type {
-  TranscriptEntry,
-  TripFault,
-  TripIndexEntry,
-  TripSnapshot,
-} from "@pi-demo/shared";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
-import type { CreateTripInput, PiEvent } from "../harness/service";
-import { registerAguiRoute } from "./routes/agui";
+import type { TripService } from "../trips/service";
+import { registerCopilotKitRoute, type NodeHandler } from "./routes/copilotkit";
 import { registerTripRoutes } from "./routes/trips";
 
-/** The subset of `TravelService` the HTTP layer depends on. */
-export type TravelServiceApi = {
-  listTrips(): Promise<TripIndexEntry[]>;
-  createTrip(input: CreateTripInput): Promise<TripIndexEntry>;
-  getSnapshot(tripId: string): Promise<TripSnapshot>;
-  submitMessage(
-    tripId: string,
-    content: string,
-    requestId: string,
-  ): Promise<{ submissionId: string }>;
-  getTranscript(tripId: string): Promise<TranscriptEntry[]>;
-  watchEvents(tripId: string, signal?: AbortSignal): AsyncIterable<PiEvent>;
-  recordFault(tripId: string, fault: TripFault): Promise<void>;
-  clearFaults(tripId: string): Promise<void>;
-  close(): Promise<void>;
-};
+/** The subset of `TripService` the HTTP layer depends on. */
+export type TripServiceApi = Pick<TripService, "listTrips" | "createTrip" | "getSnapshot">;
 
 export type BuildServerOptions = {
-  service: TravelServiceApi;
+  service: TripServiceApi;
+  /** The CopilotKit runtime handler; omitted in tests that only exercise REST. */
+  copilotHandler?: NodeHandler;
   logger?: FastifyServerOptions["logger"];
 };
 
-export function buildServer({ service, logger = false }: BuildServerOptions): FastifyInstance {
-  const app = Fastify({ logger });
+export function buildServer({
+  service,
+  copilotHandler,
+  logger = false,
+}: BuildServerOptions): FastifyInstance {
+  // Fastify's default ajv options silently strip unknown body properties, which
+  // would defeat `additionalProperties: false` in the route schemas.
+  const app = Fastify({ logger, ajv: { customOptions: { removeAdditional: false } } });
 
   app.get("/health", async () => ({ ok: true }));
   registerTripRoutes(app, service);
-  registerAguiRoute(app, service);
+  if (copilotHandler !== undefined) registerCopilotKitRoute(app, copilotHandler);
 
   return app;
 }
