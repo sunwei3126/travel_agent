@@ -1,42 +1,30 @@
-import { defineTool } from "@earendil-works/pi-durable";
-import { Type } from "@earendil-works/pi-ai";
+import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { finalizeBudget } from "../../plan/budget";
-import { TripBriefDoc, TripPlanDoc } from "../../trips/docs";
+import type { ToolContext } from "../deps";
+import { guarded, textResult } from "./helpers";
 
-export const finalizeTool = defineTool({
-  name: "plan_finalize",
-  description: "Sum the day-card cost ranges against the trip budget and store the result on the plan.",
-  parameters: Type.Object({}),
-  structuredOutputSchema: Type.Object({
-    low: Type.Number(),
-    high: Type.Number(),
-    cap: Type.Number(),
-    withinBudget: Type.Boolean(),
-  }),
-  replay: "safe",
-  execute: async (_args, api, context) => {
-    const summary = await api.commit(async (tx) => {
-      const brief = await tx.doc(TripBriefDoc, api.conversationId);
-      if (typeof brief.budgetCny !== "number") {
-        throw new Error("Cannot finalize: trip brief has no budgetCny");
-      }
-
-      const plan = await tx.doc(TripPlanDoc, api.conversationId);
-      const result = finalizeBudget(plan, brief.budgetCny);
-      plan.budget = result;
-      return result;
-    }, context);
-
-    return {
-      output: [
-        {
-          type: "text",
-          text: `Estimated ${summary.low}-${summary.high} CNY against a ${summary.cap} CNY budget: ${
+export function createFinalizeTool(ctx: ToolContext) {
+  return tool(
+    "plan_finalize",
+    "Sum the day-card cost ranges against the trip budget and store the result on the plan.",
+    {},
+    () =>
+      guarded(() => {
+        const summary = ctx.store.transaction(() => {
+          const brief = ctx.store.getDoc(ctx.tripId, "brief");
+          if (typeof brief.budgetCny !== "number") {
+            throw new Error("Cannot finalize: trip brief has no budgetCny");
+          }
+          const plan = ctx.store.getDoc(ctx.tripId, "plan");
+          const result = finalizeBudget(plan, brief.budgetCny);
+          ctx.store.setDoc(ctx.tripId, "plan", { ...plan, budget: result });
+          return result;
+        });
+        return textResult(
+          `Estimated ${summary.low}-${summary.high} CNY against a ${summary.cap} CNY budget: ${
             summary.withinBudget ? "within budget" : "over budget"
           }.`,
-        },
-      ],
-      structuredOutput: summary,
-    };
-  },
-});
+        );
+      }),
+  );
+}

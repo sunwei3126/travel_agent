@@ -1,42 +1,43 @@
-import { defineTool } from "@earendil-works/pi-durable";
-import { Type } from "@earendil-works/pi-ai";
+import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { isBriefComplete, missingBriefFields } from "@pi-demo/shared";
 import type { Claim, DayBlock, DayCard, TripPlan } from "@pi-demo/shared";
-import { TripBriefDoc, TripPlanDoc, TripSourcesDoc, upsertDayCard } from "../../trips/docs";
+import { z } from "zod";
 import { validateDayCard } from "../../plan/validate";
-import type { TravelDeps } from "../deps";
+import { upsertDayCard } from "../../trips/docs";
+import type { ToolContext } from "../deps";
+import { guarded, textResult } from "./helpers";
 
-const ClaimSchema = Type.Object({
-  text: Type.String(),
-  kind: Type.Union([Type.Literal("fact"), Type.Literal("opinion")]),
-  sourceIds: Type.Array(Type.String()),
-  unverified: Type.Optional(Type.Boolean()),
+const ClaimSchema = z.object({
+  text: z.string(),
+  kind: z.enum(["fact", "opinion"]),
+  sourceIds: z.array(z.string()),
+  unverified: z.boolean().optional(),
 });
 
-// A fixed-length pair is expressed as an array with object `items`. Tuple
-// schemas serialize to an array-form `items`, which DeepSeek's function-calling
+// A fixed-length pair is an array with a length constraint. Tuple schemas
+// serialize to an array-form `items`, which DeepSeek's function-calling
 // validator rejects before the first model request.
-const CostPair = Type.Array(Type.Number(), { minItems: 2, maxItems: 2 });
+const CostPair = z.array(z.number()).length(2);
 
-const DayBlock = Type.Object({
-  time: Type.String(),
-  title: Type.String(),
-  detail: Type.String(),
-  claims: Type.Array(ClaimSchema),
-  costCny: Type.Optional(CostPair),
+const DayBlockSchema = z.object({
+  time: z.string(),
+  title: z.string(),
+  detail: z.string(),
+  claims: z.array(ClaimSchema),
+  costCny: CostPair.optional(),
 });
 
-const parameters = Type.Object({
-  dayIndex: Type.Number({ description: "1-based day number" }),
-  date: Type.String({ description: "Date of this day as YYYY-MM-DD" }),
-  title: Type.String(),
-  blocks: Type.Array(DayBlock),
-  scenery: Type.Array(ClaimSchema),
-  food: Type.Array(ClaimSchema),
-  transport: Type.Array(ClaimSchema),
+export const emitDayShape = {
+  dayIndex: z.number().describe("1-based day number"),
+  date: z.string().describe("Date of this day as YYYY-MM-DD"),
+  title: z.string(),
+  blocks: z.array(DayBlockSchema),
+  scenery: z.array(ClaimSchema),
+  food: z.array(ClaimSchema),
+  transport: z.array(ClaimSchema),
   estimatedCostCny: CostPair,
-  sources: Type.Array(Type.String(), { description: "Source ids used by this day" }),
-});
+  sources: z.array(z.string()).describe("Source ids used by this day"),
+};
 
 type EmitDayBlockArgs = {
   time: string;
@@ -121,35 +122,34 @@ export function applyDayEmit(plan: TripPlan, args: EmitDayArgs, now: Date): Trip
   return upsertDayCard(plan, candidate);
 }
 
-export function createEmitDayTool(deps: TravelDeps) {
-  return defineTool({
-    name: "plan_emit_day",
-    description: "Write or replace one day card in the durable trip plan.",
-    parameters,
-    replay: "safe",
-    execute: async (args, api, context) => {
-      const now = deps.now();
-      await api.commit(async (tx) => {
-        const brief = await tx.doc(TripBriefDoc, api.conversationId);
-        if (!isBriefComplete(brief)) {
-          throw new Error(
-            `Cannot emit day ${args.dayIndex}: trip brief is incomplete (missing ${missingBriefFields(brief).join(", ")})`,
-          );
-        }
+export function createEmitDayTool(ctx: ToolContext) {
+  return tool(
+    "plan_emit_day",
+    "Write or replace one day card in the durable trip plan.",
+    emitDayShape,
+    (args) =>
+      guarded(() => {
+        const now = ctx.deps.now();
+        ctx.store.transaction(() => {
+          const brief = ctx.store.getDoc(ctx.tripId, "brief");
+          if (!isBriefComplete(brief)) {
+            throw new Error(
+              `Cannot emit day ${args.dayIndex}: trip brief is incomplete (missing ${missingBriefFields(brief).join(", ")})`,
+            );
+          }
 
-        const sources = await tx.doc(TripSourcesDoc, api.conversationId);
-        const plan = await tx.doc(TripPlanDoc, api.conversationId);
-        const next = applyDayEmit(plan, args, now);
-        const card = next.days.find((day) => day.dayIndex === args.dayIndex)!;
-        const errors = validateDayCard(card, sources, brief);
-        if (errors.length > 0) {
-          throw new Error(`Cannot emit day ${args.dayIndex}: ${errors.join("; ")}`);
-        }
+          const sources = ctx.store.getDoc(ctx.tripId, "sources");
+          const plan = ctx.store.getDoc(ctx.tripId, "plan");
+          const next = applyDayEmit(plan, args, now);
+          const card = next.days.find((day) => day.dayIndex === args.dayIndex)!;
+          const errors = validateDayCard(card, sources, brief);
+          if (errors.length > 0) {
+            throw new Error(`Cannot emit day ${args.dayIndex}: ${errors.join("; ")}`);
+          }
 
-        plan.days = next.days;
-      }, context);
-
-      return { output: [{ type: "text", text: `Day ${args.dayIndex} written.` }] };
-    },
-  });
+          ctx.store.setDoc(ctx.tripId, "plan", next);
+        });
+        return textResult(`Day ${args.dayIndex} written.`);
+      }),
+  );
 }
