@@ -2918,6 +2918,19 @@ describe("createClaudeAdapterFactory", () => {
     expect(built.env.CLAUDE_CONFIG_DIR).toBe(join(process.cwd(), "data-test", "claude"));
     expect(built.env.ANTHROPIC_BASE_URL).toBe("http://gw");
   });
+
+  it("survives the per-request clone CopilotKit performs", () => {
+    const { store, deps } = makeContext();
+    const adapter = createClaudeAdapterFactory({ config, store, deps })({
+      tripId: "trip-1",
+      systemPrompt: "SYSTEM",
+    });
+    // AbstractAgent.clone() builds the copy without running the constructor, so
+    // the adapter's own private state must be re-created; otherwise run()
+    // throws `Cannot read properties of undefined (reading 'has')`.
+    const cloned = (adapter as unknown as ClaudeAgentAdapter).clone();
+    expect(() => cloned.run(runInput)).not.toThrow();
+  });
 });
 ```
 
@@ -2931,6 +2944,27 @@ import type { TravelDeps } from "./deps";
 import { TRAVEL_SERVER_NAME, createTravelMcpServer } from "./mcp";
 import type { AdapterFactory } from "./travel-agent";
 
+/**
+ * `@ag-ui/claude-agent-sdk@0.0.8` keeps its own private state (admitted runs,
+ * bindings, active queries, sessions) as class fields, but `AbstractAgent.clone()`
+ * copies the instance without running the constructor. CopilotKit clones the
+ * agent for every request, so the clone's fields are `undefined` and `run()`
+ * throws on its first line. Probe 03 reproduced this; re-creating the fields on
+ * the clone is the whole fix (no behaviour change).
+ */
+class TravelClaudeAdapter extends ClaudeAgentAdapter {
+  override clone(): this {
+    const cloned = super.clone();
+    Object.assign(cloned as object, {
+      bindings: new Map(),
+      admitted: new Set(),
+      activeQueries: new Map(),
+      sessions: new Map(),
+    });
+    return cloned;
+  }
+}
+
 /** One adapter per run: built-in tools off, only the trip-bound travel tools granted. */
 export function createClaudeAdapterFactory(options: {
   config: ServerConfig;
@@ -2941,7 +2975,7 @@ export function createClaudeAdapterFactory(options: {
   const paths = dataPaths(config);
   return ({ tripId, systemPrompt }) => {
     const { server, allowedTools } = createTravelMcpServer({ tripId, store, deps });
-    return new ClaudeAgentAdapter({
+    return new TravelClaudeAdapter({
       agentId: "travel",
       model: config.model.modelId,
       systemPrompt,
@@ -4450,7 +4484,7 @@ log "submitted the Tai Shan brief"
 
 ```bash
 history=$(curl -sS -N --max-time 20 -X POST -H "content-type: application/json" \
-  --data "{\"threadId\":\"$TRIP_ID\"}" "$API_URL/api/copilotkit/agent/travel/connect" 2>/dev/null || true)
+  --data "{\"threadId\":\"$TRIP_ID\",\"runId\":\"replay\",\"messages\":[]}" "$API_URL/api/copilotkit/agent/travel/connect" 2>/dev/null || true)
 printf '%s' "$history" | grep -qF -- "$BRIEF" ||
   fail "chat history lost the original request after recovery"
 printf '%s' "$history" | grep -qF -- "服务已重启" ||
@@ -4577,6 +4611,8 @@ Expected: typecheck 0 错误；`npm test` 全绿；build 成功；最后一条�
 - [ ] **Step 7: 实测验收（对应原设计文档 §10）**
 
 前置：magpie 网关可用，`DEEPSEEK_API_KEY` 已导出。
+
+**本机必须显式指定模型**：探针发现网关默认模型 `deepseek/deepseek-flash` 返回 `402 DeepSeek: Insufficient Balance`，可用的是 `MAGPIE_MODEL=workbuddy-ai/glm-5.3-flash`（会产生思考块）。下面的命令都要带上这个变量；配置默认值不改（对外配置名与默认值保持 spec 规定）。
 
 ```bash
 npm run acceptance:live     # A、G：3 张卡片、SVG、引用、至少一条抓取核实的事实、预算 ≤ 3000

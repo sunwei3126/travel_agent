@@ -192,6 +192,9 @@ runner 的两个事实（读 `@copilotkit/sqlite-runner` 源码得到）：
 6. **被中断那轮的部分输出不进聊天历史**，续跑提示作为可见用户消息出现。已接受。
 7. **草图每张多一次子进程启动**（一个行程 3 张）。若实测太慢，再改为直接调 Messages API。
 8. **`better-sqlite3` 是原生模块**，CI 与 Windows 都要能装预编译包。探针第 6 项。
+9. **适配器 0.0.8 的 `clone()` 缺陷（探针已实证）**：`AbstractAgent.clone()` 不跑构造函数，适配器私有字段在克隆上为 `undefined`，而 CopilotKit 每个请求都会克隆，`run()` 首行即抛 `Cannot read properties of undefined (reading 'has')`。修法是在子类里覆盖 `clone()` 重建这四个字段（`bindings`、`admitted`、`activeQueries`、`sessions`），探针验证后 5a–5d 全通过。升级适配器时应复查该缺陷是否已修。
+10. **并发 run 的拒绝对客户端不可见**：HTTP 200 + 空 SSE，`Thread already running` 只出现在服务端日志。前端必须靠自身 busy 状态禁用输入，不能依赖错误事件。
+11. **`connect` 需要 `{ threadId, runId, messages: [] }`**，只给 `threadId` 不够（探针记录）。验收脚本按此构造。
 
 ## 10. 留给实现者的决定
 
