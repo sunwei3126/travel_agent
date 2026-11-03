@@ -17,3 +17,10 @@ test-results/
 playwright-report/
 .DS_Store
 Thumbs.db
+
+# Leftovers from the `net-rewrite` branch (.NET 10 rewrite, never merged here).
+# They are untracked on this branch and must not be staged.
+apps/server/src/PiTravel.Server/
+apps/server/tests/
+tools/PiTravel.Acceptance/
+artifacts/
