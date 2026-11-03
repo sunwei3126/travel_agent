@@ -139,7 +139,10 @@ wait_for_port_release() {
 }
 
 wait_for_research() {
-  local deadline=$((SECONDS + 300))
+  # The model needs several minutes to get from the first turn to its first
+  # search on this gateway (a full trip measured ~35 minutes), so 5 minutes
+  # was too tight.
+  local deadline=$((SECONDS + 900))
   while [ "$SECONDS" -lt "$deadline" ]; do
     local body search fetch
     if body=$(api_get "/api/trips/$TRIP_ID"); then
@@ -156,7 +159,9 @@ wait_for_research() {
 }
 
 wait_for_completion() {
-  local deadline=$((SECONDS + 900))
+  # A full trip measured ~35 minutes on the local gateway, and the resumed run
+  # still has to finish its remaining days, so 15 minutes was not enough.
+  local deadline=$((SECONDS + 2700))
   local started=0
   while [ "$SECONDS" -lt "$deadline" ]; do
     local body running days

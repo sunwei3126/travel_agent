@@ -11,7 +11,10 @@ const START_DATE =
 const BRIEF = `泰山玩三天，${START_DATE} 从上海虹桥火车站出发，自己去，预算 3000，体力一般，在意风景和美食`;
 const POLL_INTERVAL_MS = 3000;
 const START_TIMEOUT_MS = 60_000;
-const RUN_TIMEOUT_MS = 15 * 60 * 1000;
+// Measured on 2026-11-03 against the local gateway: a full Tai Shan trip
+// (6 searches, 13 fetches, 3 day cards, 3 sketches, one budget revision)
+// took about 35 minutes end to end, so 15 minutes was not reachable.
+const RUN_TIMEOUT_MS = 45 * 60 * 1000;
 
 /**
  * Closes the run's SSE socket when the acceptance ends. Without it the drained

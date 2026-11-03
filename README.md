@@ -170,7 +170,8 @@ npm run acceptance:live
 
 `acceptance:live` creates a trip, submits a brief whose start date defaults to
 today + 14 days (override with `ACCEPTANCE_START_DATE=YYYY-MM-DD`), and polls
-for up to 15 minutes. It fails unless the run ends with:
+for up to 45 minutes (a full trip measured about 35 minutes on the local
+gateway). It fails unless the run ends with:
 
 - exactly three day cards;
 - a non-`pending` SVG status on every day;
