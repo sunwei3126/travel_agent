@@ -96,7 +96,10 @@ describe("recoverInterruptedRuns", () => {
     expect(run).toHaveBeenCalledTimes(1);
     const request = run.mock.calls[0][0];
     expect(request.threadId).toBe("a");
-    expect(request.agent).toEqual({ cloned: true });
+    // `runAgent` replaces `input.threadId` and `input.messages` with the agent's
+    // own values, so the clone must carry the trip id and the replayed messages.
+    expect(request.agent).toMatchObject({ cloned: true, threadId: "a" });
+    expect(request.agent.messages).toEqual(request.input.messages);
     expect(request.input.forwardedProps).toEqual({ recovery: true });
     expect(request.input.messages).toEqual([
       { id: "m0", role: "user", content: "最初的请求" },

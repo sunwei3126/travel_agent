@@ -100,9 +100,18 @@ export async function recoverInterruptedRuns(options: RecoverOptions): Promise<v
     };
 
     try {
+      // `AbstractAgent.runAgent` replaces `input.threadId` with `this.threadId`
+      // (or a fresh UUID) before calling `run`, and only the HTTP path lets
+      // CopilotKit set it. Recovery drives the runner directly, so the trip id
+      // must be set on the clone or the agent looks up a thread that does not exist.
+      const recoveryAgent = agent.clone();
+      recoveryAgent.threadId = current.tripId;
+      // `runAgent` replaces the input messages with the agent's own list too, so
+      // the replayed conversation has to be seeded on the clone as well.
+      recoveryAgent.messages = input.messages;
       await lastValueFrom(
         runner
-          .run({ threadId: current.tripId, agent: agent.clone(), input })
+          .run({ threadId: current.tripId, agent: recoveryAgent, input })
           // `each` arms at subscription and after every event, so a run that
           // stalls before or after RUN_STARTED is bounded too.
           .pipe(timeout({ each: timeoutMs })),
