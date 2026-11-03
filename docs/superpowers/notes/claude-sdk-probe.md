@@ -129,3 +129,48 @@ DATA_DIR=./data/smoke11 PORT=4202 MAGPIE_MODEL=workbuddy-ai/glm-5.3-flash DEEPSE
 | 场景 E（SVG 失败卡片）、F（局部修改）、H（内容核对） | 均依赖一次真实研究 + 出图，缺 key |
 | 场景 B 的界面部分（刷新恢复由 Task 10 的浏览器实测覆盖） | 本轮只做了 API 层验证 |
 
+
+## 2026-11-03 真实验收（拿到 DEEPSEEK_API_KEY 之后）
+
+模型用 `MAGPIE_MODEL=workbuddy-ai/glm-5.3-flash`（网关默认模型 402）。
+
+### 场景 A / G：`acceptance:live` 的实质断言
+
+一轮完整行程（trip `2cbe4020…`）在真实研究下跑完，逐项核对：
+
+| 断言 | 结果 |
+| --- | --- |
+| 恰好 3 张日卡 | 3 |
+| 每张卡 SVG 非 pending | `ok, ok, ok` |
+| 每条 fact 有来源或标注未核实 | 22 条 fact，0 条无来源 |
+| 至少一条 fact 由已抓取页面支撑 | 21 条 |
+| 抓取页数 | 13（来源 32 条） |
+| 预算 `withinBudget` 且 `high ≤ 3000` | `high 3000 / cap 3000 / withinBudget true` |
+| 内容覆盖（虹桥往返、住宿区域、徒步+索道、日出、美食、预算分项） | 覆盖（`上海→泰安…` / `登顶泰山…` / `山顶日出…`） |
+
+**唯一未过的是时间**：整轮实测约 35 分钟，脚本原来的 15 分钟上限不够。已按实测把 `acceptance:live` 的窗口改为 45 分钟，`acceptance:crash` 的"等研究开始"窗口改为 30 分钟、"等完成"窗口改为 45 分钟，README 同步。
+
+### 场景 C：崩溃恢复
+
+第一次真实杀进程验收暴露了**两个产品缺陷**，都已修复并各自有回归测试：
+
+1. `AbstractAgent.runAgent` 会把 `input.threadId` 换成 `this.threadId`（未设置时是随机 UUID）。HTTP 路径由 CopilotKit 设置，恢复路径没有，于是恢复的 run 去查一个不存在的行程：`Trip not found: <random>`。修法：在恢复用的克隆上设置 `threadId = tripId`。
+2. 同一个 `runAgent` 也会用 agent 自身的 `messages` 覆盖 `input.messages`，恢复的重放消息因此丢失：`The run input has no user message`。修法：在克隆上同时设置 `messages`。
+
+修复后的实测证据（`data/diag`，杀进程后重启）：
+
+```
+Cleared 1 stale run flag(s) left by an unclean shutdown
+[ClaudeAdapter] Applied forwarded_prop: resume = ede2a528-…
+[ClaudeAdapter] Processing 2 messages for threadId=850c073a-…
+[ClaudeAdapter] Captured session_id=ede2a528-… for thread=850c073a-…
+```
+
+以及 `connect` 回放同时包含原始 brief 与"服务已重启，请继续未完成的任务。"
+
+**仍未完整观察到的**：恢复后的 run 跑完剩余两天（模型速度原因，未在本次时间预算内完成）。`acceptance:crash` 的端到端脚本因此只验证到"重启后正确续跑并写入历史"，尚未验证"续跑跑完 3 天且不重复计费"。
+
+### 仍未执行
+
+- 场景 E 的界面部分（SVG 失败卡片占位与重画按钮）——单元测试覆盖了生成与占位逻辑，界面未人工确认。
+- 场景 F（局部修改只动 Day 3）——未单独跑一次真实修改。
