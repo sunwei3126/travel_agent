@@ -174,3 +174,23 @@ Cleared 1 stale run flag(s) left by an unclean shutdown
 
 - 场景 E 的界面部分（SVG 失败卡片占位与重画按钮）——单元测试覆盖了生成与占位逻辑，界面未人工确认。
 - 场景 F（局部修改只动 Day 3）——未单独跑一次真实修改。
+
+## 2026-11-03 浏览器端到端（ego-browser，生产构建 + next start）
+
+真实 UI 操作，模型 `workbuddy-ai/glm-5.3-flash`，数据目录 `apps/server/data/e2e`。
+
+| 步骤 | 结果 |
+| --- | --- |
+| 新建行程（表单） | 通过；日期需用原生 setter 触发 input 事件（`fill()` 对 date 输入无效，属自动化工具差异，非产品缺陷） |
+| 发送 brief | 通过；思考块、工具调用（参数/结果/状态）实时流式出现 |
+| 刷新（run 进行中） | 通过；历史恢复、run 继续、按钮保持"停止" |
+| brief 补全 | 通过；`trip_update_brief` 返回 `Brief is complete.`，左侧「信息已齐全」 |
+| 研究 | 通过；6 次搜索 / 13 次抓取，计数实时增长 |
+| 日卡 + SVG + 预算 | 通过；3 张卡片、3 张 SVG `ok`、预算 2630/3000 `withinBudget` |
+| 校验回环 | 通过；`plan_emit_day` 因引用未抓取来源被拒，模型自行补抓后重写（界面可见说明） |
+| 局部修改（场景 F） | 通过；Day 1/2 `updatedAt` 不变，只有 Day 3 从 `05:22:52` 变为 `05:53:18`，SVG 重新生成，预算重算 2630→2580 |
+
+### 本轮发现的两个 UX 缺陷（未修）
+
+1. **日志噪声**：每次 run 产生上千行 `[ag-ui][enforce] Removed unrecognised material at '/threadId'`（适配器在事件里带 `threadId`/`runId`，`@ag-ui/client` 的兼容层逐条告警）。真正的错误会被淹没。可用 `SUPPRESS_TRANSFORMATION_WARNINGS` 抑制，或在事件进入 runner 前剥掉这两个字段。
+2. **失败工具的结果在界面上显示为 `{"error":true}`**：模型能看到真实的错误文本（它据此补抓并重写），但用户看不到原因。`toolResultText` 处理的是 `{type:"text",text}` 数组，说明适配器把 `isError` 结果转成了别的形状。
