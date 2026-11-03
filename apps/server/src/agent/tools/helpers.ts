@@ -4,9 +4,20 @@ export function textResult(text: string): CallToolResult {
   return { content: [{ type: "text", text }] };
 }
 
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    if (error === undefined || error === null) return "Tool failed";
+    const text = String(error).trim();
+    return text.length > 0 ? text : "Tool failed";
+  }
+  const message = error.message.trim();
+  if (message.length > 0) return message;
+  return error.name !== "Error" ? `${error.name} without a message` : "Tool failed without a message";
+}
+
 export function errorResult(error: unknown): CallToolResult {
   return {
-    content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+    content: [{ type: "text", text: describeError(error) }],
     isError: true,
   };
 }

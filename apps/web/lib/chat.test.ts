@@ -4,6 +4,7 @@ import {
   buildChatSegments,
   prettyJson,
   toolLabel,
+  toolResultText,
   toolStatus,
 } from "./chat";
 
@@ -66,5 +67,29 @@ describe("chat helpers", () => {
     expect(toolLabel("deepseek_search")).toBe("搜索资料");
     expect(toolLabel("deepseek_fetch")).toBe("读取网页");
     expect(toolLabel("unknown_tool")).toBe("unknown_tool");
+  });
+
+  it("treats the adapter's error envelope as a failed tool", () => {
+    const call: ToolCall = {
+      id: "tc1",
+      type: "function",
+      function: { name: "deepseek_search", arguments: "{}" },
+    };
+    const envelope = (content: string): ToolMessage => ({
+      id: "tc1-result",
+      role: "tool",
+      toolCallId: "tc1",
+      content,
+    });
+
+    const withText = envelope('{"error":true,"content":"Cannot fetch \\"x\\""}');
+    expect(toolStatus({ call, result: withText }, false)).toBe("error");
+    expect(toolResultText(withText.content)).toBe('Cannot fetch "x"');
+
+    const bare = envelope('{"error":true}');
+    expect(toolStatus({ call, result: bare }, false)).toBe("error");
+    expect(toolResultText(bare.content)).toBe("工具执行失败，未返回原因。");
+
+    expect(toolResultText('{"ok":true}')).toBe('{"ok":true}');
   });
 });

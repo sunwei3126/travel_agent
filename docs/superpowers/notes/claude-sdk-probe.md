@@ -190,7 +190,12 @@ Cleared 1 stale run flag(s) left by an unclean shutdown
 | 校验回环 | 通过；`plan_emit_day` 因引用未抓取来源被拒，模型自行补抓后重写（界面可见说明） |
 | 局部修改（场景 F） | 通过；Day 1/2 `updatedAt` 不变，只有 Day 3 从 `05:22:52` 变为 `05:53:18`，SVG 重新生成，预算重算 2630→2580 |
 
-### 本轮发现的两个 UX 缺陷（未修）
+### 本轮发现的两个 UX 缺陷（已修）
 
 1. **日志噪声**：每次 run 产生上千行 `[ag-ui][enforce] Removed unrecognised material at '/threadId'`（适配器在事件里带 `threadId`/`runId`，`@ag-ui/client` 的兼容层逐条告警）。真正的错误会被淹没。可用 `SUPPRESS_TRANSFORMATION_WARNINGS` 抑制，或在事件进入 runner 前剥掉这两个字段。
 2. **失败工具的结果在界面上显示为 `{"error":true}`**：模型能看到真实的错误文本（它据此补抓并重写），但用户看不到原因。`toolResultText` 处理的是 `{type:"text",text}` 数组，说明适配器把 `isError` 结果转成了别的形状。
+
+修复内容（同日）：
+
+- `TravelAgent` 在转发前剥掉非生命周期事件上的 `threadId`/`runId`（AG-UI 只为生命周期事件定义它们）。实测一轮对话后日志从上千行 `[ag-ui][enforce]` 降到 0 行，只剩 12 行适配器诊断。
+- `errorResult` 在错误没有消息时给出可读文案（`<Name> without a message` / `Tool failed without a message`）；`toolStatus`/`toolResultText` 能识别适配器的 `{"error":true,"content":...}` 信封。实测：强制抓取未搜索过的 URL 后，界面显示「失败」与完整原因 `Cannot fetch "…": the URL must come from a deepseek_search result.`

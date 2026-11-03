@@ -68,6 +68,7 @@ export function toolStatus(trace: ToolTrace, isLoading: boolean): ToolStatus {
     if (trace.result.error !== undefined && trace.result.error !== "") {
       return "error";
     }
+    if (toolErrorEnvelope(trace.result.content) !== undefined) return "error";
     const metadata = trace.result.metadata as
       | Record<string, unknown>
       | undefined;
@@ -94,6 +95,33 @@ export function toolStatusLabel(status: ToolStatus): string {
   }
 }
 
+/**
+ * `@ag-ui/claude-agent-sdk` serializes a failed tool result as
+ * `{"error":true,"content":"..."}`; the content is omitted when the tool
+ * returned no message.
+ */
+function toolErrorEnvelope(
+  content: ToolMessage["content"],
+): { error: true; content?: string } | undefined {
+  if (typeof content !== "string" || !content.trimStart().startsWith("{")) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || !("error" in parsed)) {
+    return undefined;
+  }
+  if (parsed.error !== true) return undefined;
+  const text = "content" in parsed ? parsed.content : undefined;
+  return typeof text === "string" && text.length > 0
+    ? { error: true, content: text }
+    : { error: true };
+}
+
 /** Pretty-prints a JSON string, keeping the raw value when it is not JSON. */
 export function prettyJson(value: string): string {
   try {
@@ -118,6 +146,10 @@ export function toolLabel(name: string): string {
 
 /** Flattens AG-UI tool result content into displayable text. */
 export function toolResultText(content: ToolMessage["content"]): string {
+  const envelope = toolErrorEnvelope(content);
+  if (envelope !== undefined) {
+    return envelope.content ?? "工具执行失败，未返回原因。";
+  }
   if (typeof content === "string") return content;
   return content
     .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))

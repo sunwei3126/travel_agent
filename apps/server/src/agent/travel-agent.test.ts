@@ -236,4 +236,42 @@ describe("TravelAgent", () => {
     const events = await collect(agent.clone());
     expect(events).toEqual([finished]);
   });
+
+  it("drops the run ids the adapter stamps on non-lifecycle events", async () => {
+    const started = {
+      type: EventType.RUN_STARTED,
+      threadId: "t1",
+      runId: "r1",
+      input: {},
+    } as unknown as BaseEvent;
+    const content = {
+      type: EventType.TEXT_MESSAGE_CONTENT,
+      threadId: "t1",
+      runId: "r1",
+      messageId: "m9",
+      delta: "hello",
+    } as unknown as BaseEvent;
+    const toolResult = {
+      type: EventType.TOOL_CALL_RESULT,
+      threadId: "t1",
+      runId: "r1",
+      messageId: "m10",
+      toolCallId: "tc1",
+      content: "ok",
+    } as unknown as BaseEvent;
+
+    const { agent } = setup(scripted([started, content, toolResult, finished]));
+    const events = await collect(agent);
+
+    // Lifecycle events keep the ids AG-UI defines for them.
+    expect(events[0]).toMatchObject({ type: EventType.RUN_STARTED, threadId: "t1", runId: "r1" });
+    expect(events[3]).toMatchObject({ type: EventType.RUN_FINISHED, threadId: "t1", runId: "r1" });
+    // Everything else loses them, which is what silenced the client's warnings.
+    for (const event of events.slice(1, 3)) {
+      expect(event).not.toHaveProperty("threadId");
+      expect(event).not.toHaveProperty("runId");
+    }
+    expect(events[1]).toMatchObject({ messageId: "m9", delta: "hello" });
+    expect(events[2]).toMatchObject({ toolCallId: "tc1", content: "ok" });
+  });
 });

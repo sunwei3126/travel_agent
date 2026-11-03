@@ -18,6 +18,26 @@ export type TravelAgentDeps = {
 
 export const FAULT_KIND = "claude.run";
 const ERROR_RESULT_MESSAGE = "The model run ended with an error result";
+
+const LIFECYCLE_EVENTS = new Set<string>([
+  EventType.RUN_STARTED,
+  EventType.RUN_FINISHED,
+  EventType.RUN_ERROR,
+]);
+
+/**
+ * The adapter stamps `threadId`/`runId` on every event, but AG-UI defines them
+ * only on lifecycle events. The client's compatibility layer warns once per
+ * event about the extras, which buries real errors in the log.
+ */
+function withoutRunIds(event: BaseEvent): BaseEvent {
+  if (LIFECYCLE_EVENTS.has(event.type)) return event;
+  if (!("threadId" in event) && !("runId" in event)) return event;
+  const rest: Record<string, unknown> = { ...event };
+  delete rest.threadId;
+  delete rest.runId;
+  return rest as unknown as BaseEvent;
+}
 /** The SDK's wording when a stored `resume` id no longer has a transcript. */
 const SESSION_UNAVAILABLE = /original sdk session is unavailable/i;
 
@@ -159,7 +179,7 @@ export class TravelAgent extends AbstractAgent {
             } else if (record.type === EventType.RUN_FINISHED) {
               finish();
             }
-            subscriber.next(event);
+            subscriber.next(withoutRunIds(event));
           },
           error: (error: unknown) => {
             fail(error instanceof Error ? error.message : String(error));
